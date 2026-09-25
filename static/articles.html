@@ -19,6 +19,7 @@
     .card { background: white; border: 1px solid #e1e7f0; border-radius: 15px; padding: 22px; margin-bottom: 14px; box-shadow: 0 8px 25px #1720330d; }
     .meta { margin: 0 0 14px; font-size: 14px; }
     .error { color: #b42318; }
+    .progress-log { margin: 4px 0 0; padding-left: 24px; color: #475569; line-height: 1.7; }
   </style>
 </head>
 <body>
@@ -31,6 +32,7 @@
     <input id="search" type="search" placeholder="Nhập tiêu đề hoặc tên tài khoản">
     <div id="list" role="status" aria-live="polite"></div>
   </main>
+  <script src="/static/progress.js"></script>
   <script>
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[char]);
     let articles = [];
@@ -43,7 +45,7 @@
         const date = article.published_at || article.time || '';
         return `<article class="card"><h2><a href="${href}">${escapeHtml(article.title)}</a></h2>` +
           `<p class="meta">${escapeHtml(article.account_name)}${date ? ' · ' + escapeHtml(date) : ''}</p>` +
-          `<a href="${href}">Xem chi tiết →</a><button class="refresh" type="button" data-id="${encodeURIComponent(article.id)}">Cập nhật bài viết</button><p class="meta refresh-status" role="status"></p></article>`;
+          `<a href="${href}">Xem chi tiết →</a><button class="refresh" type="button" data-id="${encodeURIComponent(article.id)}">Cập nhật bài viết</button><p class="meta refresh-status" role="status"></p><ol class="progress-log" aria-label="Nhật ký cập nhật bài viết" aria-live="polite" hidden></ol></article>`;
       }).join('') : '<p>Không tìm thấy bài viết phù hợp.</p>';
     }
     document.querySelector('#search').addEventListener('input', render);
@@ -51,14 +53,14 @@
       const button = event.target.closest('button.refresh');
       if (!button) return;
       const status = button.parentElement.querySelector('.refresh-status');
+      const progressLog = button.parentElement.querySelector('.progress-log');
       button.disabled = true;
+      status.className = 'meta refresh-status';
       status.textContent = 'Đang tải lại bài viết từ link gốc...';
       try {
         const id = decodeURIComponent(button.dataset.id);
-        const path = '/api/reports/' + id.split('/').map(encodeURIComponent).join('/') + '/refresh';
-        const response = await fetch(path, {method: 'POST'});
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || 'Không cập nhật được bài viết.');
+        const path = '/api/reports/' + id.split('/').map(encodeURIComponent).join('/') + '/refresh/jobs';
+        await runArticleJob(path, {method: 'POST'}, progressLog);
         status.textContent = 'Đã cập nhật. Mở chi tiết để xem nội dung mới.';
       } catch (error) {
         status.className = 'meta refresh-status error';

@@ -51,6 +51,8 @@ Mở [http://127.0.0.1:8000/](http://127.0.0.1:8000/), dán link bài viết WeC
 
 Nút **Cập nhật bài viết** ở danh sách và trang chi tiết tải lại URL gốc của đúng bài đã lưu, giữ nguyên mã bài viết và lưu bản trước trong `storage/versions/`. Dashboard không dùng AI hay nguồn dữ liệu riêng: mỗi lần mở trang, ứng dụng đọc các tệp `storage/raw/.../article.md`, tìm bảng hải quan đường bộ có ngày và số container Việt Nam/Thái Lan. Mỗi dòng dashboard có link tới bài đã lưu và trích đoạn số liệu gốc.
 
+Khi tải hoặc cập nhật bài, trang hiển thị nhật ký từng bước và lỗi nếu có. Trên Ubuntu có thể xem chi tiết lỗi máy chủ bằng `sudo journalctl -u wechat-intelligence -f`.
+
 Nếu PowerShell chặn lệnh kích hoạt môi trường ảo, chạy trực tiếp bằng `.\.venv\Scripts\python.exe -m pip install -r requirements.txt` và `.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000`.
 
 ## Tùy chọn

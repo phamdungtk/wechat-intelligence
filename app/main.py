@@ -10,6 +10,8 @@ from datetime import datetime
 from threading import Lock
 from urllib.parse import urlparse
 from uuid import uuid4
+from typing import Callable
+import logging
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
@@ -21,6 +23,7 @@ from app.downloader.downloader import download_article
 from app.reporting import article_report, daily_vehicle_counts
 from app.wechat_account import CAPTURE_LOG_PATH, WeChatAccountDownloader, capture_logger
 from app.wechat_history import latest_post
+from app.jobs import get_job, start_job
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
@@ -28,8 +31,16 @@ load_dotenv(BASE_DIR / ".env")
 
 app = FastAPI(title="WeChat Intelligence")
 app.mount("/stored", StaticFiles(directory=BASE_DIR / "storage"), name="stored")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 account_downloader = WeChatAccountDownloader(BASE_DIR)
 refresh_lock = Lock()
+logger = logging.getLogger("wechat.articles")
+Progress = Callable[[str], None]
+
+
+def _progress(callback: Progress | None, message: str) -> None:
+    if callback:
+        callback(message)
 
 
 def _saved_articles() -> list[tuple[Path, dict, Path]]:
@@ -139,7 +150,12 @@ def report_by_id(account: str, year: str, month: str, day: str, stamp: str):
 
 @app.post("/api/reports/{account}/{year}/{month}/{day}/{stamp}/refresh")
 def refresh_report(account: str, year: str, month: str, day: str, stamp: str):
+    return _refresh_report(account, year, month, day, stamp)
+
+
+def _refresh_report(account: str, year: str, month: str, day: str, stamp: str, progress: Progress | None = None):
     """Fetch the saved article's original URL and replace this record in place."""
+    _progress(progress, "Kiểm tra bài viết đã lưu và link WeChat gốc.")
     with refresh_lock:
         directory = _saved_article_directory(account, year, month, day, stamp)
         metadata_path = directory / "metadata.json"
@@ -153,6 +169,7 @@ def refresh_report(account: str, year: str, month: str, day: str, stamp: str):
         with tempfile.TemporaryDirectory(prefix="wechat-refresh-", dir=storage_root) as temporary:
             temporary_root = Path(temporary)
             try:
+                _progress(progress, "Đang tải lại nội dung bài viết từ WeChat.")
                 exported = account_downloader.service.download_article(
                     source_url,
                     formats="html,md,json",
@@ -162,6 +179,8 @@ def refresh_report(account: str, year: str, month: str, day: str, stamp: str):
                 source_dir = Path(str(exported["directory"]))
                 source_metadata = dict(exported.get("article") or {})
             except Exception as upstream_error:
+                logger.warning("Primary refresh downloader failed", exc_info=True)
+                _progress(progress, "Trình tải chính gặp lỗi. Đang thử cách tải dự phòng.")
                 fallback_root = temporary_root / "fallback" / "raw"
                 fallback_root.mkdir(parents=True, exist_ok=True)
                 fallback_dir = download_article(source_url, base_storage_dir=str(fallback_root))
@@ -173,6 +192,7 @@ def refresh_report(account: str, year: str, month: str, day: str, stamp: str):
             source_md = source_dir / "article.md"
             if not source_md.is_file() or not source_md.read_text(encoding="utf-8").strip():
                 raise HTTPException(status_code=502, detail="Bài viết tải lại không có nội dung.")
+            _progress(progress, "Đã tải nội dung. Đang đọc kết luận và số liệu trong bài.")
             prepared = temporary_root / "prepared"
             prepared.mkdir()
             content = source_md.read_text(encoding="utf-8")
@@ -199,6 +219,7 @@ def refresh_report(account: str, year: str, month: str, day: str, stamp: str):
                 "status": "downloaded",
             })
             report_data = article_report(metadata, content)
+            _progress(progress, "Đang lưu nội dung và cập nhật dashboard.")
             (prepared / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
             (prepared / "analysis.json").write_text(json.dumps(report_data, ensure_ascii=False, indent=2), encoding="utf-8")
             (prepared / "report.md").write_text(
@@ -216,6 +237,17 @@ def refresh_report(account: str, year: str, month: str, day: str, stamp: str):
                 previous_version.rename(directory)
                 raise
             return {"id": _article_id(directory / "metadata.json"), **report_data}
+
+
+@app.post("/api/reports/{account}/{year}/{month}/{day}/{stamp}/refresh/jobs")
+def refresh_report_job(account: str, year: str, month: str, day: str, stamp: str):
+    _saved_article_directory(account, year, month, day, stamp)
+    return start_job("refresh", lambda progress: _refresh_report(account, year, month, day, stamp, progress))
+
+
+@app.get("/api/jobs/{job_id}")
+def article_job(job_id: str):
+    return get_job(job_id)
 
 
 @app.get("/api/preview/{account}/{year}/{month}/{day}/{stamp}", response_class=HTMLResponse)
@@ -522,8 +554,9 @@ def _download_from_sogou_search(payload: AccountRequest):
         raise HTTPException(status_code=502, detail=f"Không đọc được kết quả Sogou: {exc}") from exc
 
 
-def _process_article_url(url: str):
+def _process_article_url(url: str, progress: Progress | None = None):
     try:
+        _progress(progress, "Đang kết nối WeChat và tải toàn văn bài viết.")
         # The vendored exporter keeps the complete body, local images and
         # tables instead of only retaining remote image URLs.
         exported = account_downloader.service.download_article(
@@ -532,13 +565,19 @@ def _process_article_url(url: str):
             output_dir=account_downloader.output_dir,
             include_assets=True,
         )
-        return _process_account_download(exported)
+        _progress(progress, "Đã tải nội dung. Đang lưu bài và đọc số liệu.")
+        result = _process_account_download(exported)
+        _progress(progress, "Đã lưu bài viết và cập nhật dashboard.")
+        return result
     except Exception as upstream_error:
+        logger.warning("Primary article downloader failed", exc_info=True)
+        _progress(progress, "Trình tải chính gặp lỗi. Đang thử cách tải dự phòng.")
         # Keep the older lightweight downloader as a fallback for a URL that
         # the upstream parser cannot recognize yet.
         saved_dir = download_article(url, base_storage_dir=str(BASE_DIR / "storage" / "raw"))
         if not saved_dir:
             raise HTTPException(status_code=502, detail=f"Không tải được bài viết: {upstream_error}") from upstream_error
+        _progress(progress, "Đã tải nội dung. Đang đọc kết luận và số liệu trong bài.")
         saved_path = Path(saved_dir)
         metadata = json.loads((saved_path / "metadata.json").read_text(encoding="utf-8"))
         content = (saved_path / "article.md").read_text(encoding="utf-8")
@@ -546,6 +585,7 @@ def _process_article_url(url: str):
         analysis = report_data["analysis"]
         (saved_path / "analysis.json").write_text(json.dumps(report_data, ensure_ascii=False, indent=2), encoding="utf-8")
         (saved_path / "report.md").write_text(f"# {metadata.get('title', 'Báo cáo')}\n\n## Kết luận từ bài viết\n\n{analysis['report']['conclusion']}\n", encoding="utf-8")
+        _progress(progress, "Đã lưu bài viết và cập nhật dashboard.")
         return {
             "id": "/".join(saved_path.relative_to(BASE_DIR / "storage" / "raw").parts),
             "metadata": metadata,
@@ -593,3 +633,11 @@ def fetch_article(payload: ArticleRequest):
     if payload.url.scheme != "https" or payload.url.host != "mp.weixin.qq.com" or not re.match(r"^/s(?:/|$)", payload.url.path or ""):
         raise HTTPException(status_code=400, detail="Hãy dùng link bài viết https://mp.weixin.qq.com/s/...")
     return _process_article_url(url)
+
+
+@app.post("/api/articles/jobs")
+def fetch_article_job(payload: ArticleRequest):
+    url = str(payload.url)
+    if payload.url.scheme != "https" or payload.url.host != "mp.weixin.qq.com" or not re.match(r"^/s(?:/|$)", payload.url.path or ""):
+        raise HTTPException(status_code=400, detail="Hãy dùng link bài viết https://mp.weixin.qq.com/s/...")
+    return start_job("download", lambda progress: _process_article_url(url, progress))
