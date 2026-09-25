@@ -2,6 +2,23 @@
 
 Ứng dụng FastAPI tải một bài viết WeChat từ link `https://mp.weixin.qq.com/s/...`, hiển thị kết luận có sẵn trong bài và số container xuất khẩu qua hải quan đường bộ Trung Quốc theo ngày. Ứng dụng không dùng AI và không dịch bài viết.
 
+## Chạy trên Ubuntu bằng systemd (cổng 3435)
+
+```bash
+sudo apt update
+sudo apt install -y git python3 python3-venv python3-pip python3-tk
+mkdir -p ~/apps && cd ~/apps
+git clone --recurse-submodules https://github.com/phamdungtk/wechat-intelligence.git
+cd wechat-intelligence
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+sudo bash deploy/install-service.sh
+```
+
+Script cài service `wechat-intelligence` cho người dùng đang chạy `sudo`, dùng thư mục dự án hiện tại và khởi động Uvicorn trên `0.0.0.0:3435`. Service tự khởi động cùng Ubuntu và tự chạy lại khi lỗi. Kiểm tra bằng `sudo systemctl status wechat-intelligence`; xem log bằng `sudo journalctl -u wechat-intelligence -f`. Nếu UFW đang bật và cần truy cập từ máy khác, chạy `sudo ufw allow 3435/tcp` rồi mở `http://IP_MAY_CHU:3435/`.
+
+Sau khi cập nhật mã nguồn, chạy lại `sudo bash deploy/install-service.sh` để áp dụng cấu hình và khởi động lại service. Dữ liệu bài viết trong `storage/` được giữ nguyên.
+
 ## Chạy trên Windows
 
 Yêu cầu: Python 3.10 trở lên, PowerShell và kết nối Internet.
