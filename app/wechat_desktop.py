@@ -104,14 +104,14 @@ def import_clipboard_article() -> dict | None:
     from app.main import _saved_articles
 
     saved = None
-    for metadata_path, metadata, _ in _saved_articles():
+    for metadata_path, metadata, article_path in _saved_articles():
         if str(metadata.get("url") or "") == url:
             saved = (metadata_path, metadata, article_path)
             break
     if saved:
         from app.main import _translate_saved_article
 
-        metadata_path, metadata, article_path = saved
+        metadata_path, metadata, _ = saved
         translated = _translate_saved_article(metadata_path.parent)
         LOGGER.info("Article already saved; report status=%s", translated["analysis"]["status"])
         return {"id": "/".join(metadata_path.parent.relative_to(BASE_DIR / "storage" / "raw").parts),
@@ -183,6 +183,7 @@ def watch_clipboard(interval: float = 5.0, refresh_interval: float = 3600.0) -> 
                     previous = url
         except Exception:
             LOGGER.exception("Failed to import an article from the WeChat desktop clipboard")
+            next_refresh = time.monotonic() + max(300.0, refresh_interval)
         time.sleep(interval)
 
 
