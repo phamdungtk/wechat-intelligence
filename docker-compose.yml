@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  # CSDL PostgreSQL lưu trữ toàn bộ dữ liệu
+  postgres:
+    image: postgres:15-alpine
+    container_name: wechat_postgres
+    environment:
+      POSTGRES_USER: wechat_user
+      POSTGRES_PASSWORD: wechat_password
+      POSTGRES_DB: wechat_intelligence
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    restart: unless-stopped

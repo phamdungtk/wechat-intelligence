@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Báo cáo và dashboard xuất khẩu</title>
+  <style>
+    :root { font-family: Inter, system-ui, sans-serif; color: #172033; background: #f3f6fb; }
+    body { margin: 0; }
+    main { width: min(960px, calc(100% - 32px)); margin: 36px auto; }
+    header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 20px; }
+    h1 { margin: 0 0 8px; font-size: clamp(28px, 5vw, 42px); }
+    h2 { margin: 0 0 18px; }
+    h3 { margin-top: 26px; }
+    .source { margin: 0; color: #64748b; }
+    .back { color: #2563eb; text-decoration: none; font-weight: 700; white-space: nowrap; }
+    .card { background: white; border: 1px solid #e1e7f0; border-radius: 16px; padding: clamp(20px, 4vw, 34px); margin-bottom: 18px; box-shadow: 0 8px 25px #1720330d; }
+    .markdown { font-size: 17px; line-height: 1.75; overflow-wrap: anywhere; }
+    .markdown p { margin: 12px 0; }
+    .markdown ul, .markdown ol { padding-left: 26px; }
+    .markdown img { display: block; max-width: 100%; height: auto; margin: 18px auto; }
+    .markdown a { color: #2563eb; }
+    .table-wrap { overflow-x: auto; margin: 18px 0; }
+    table { width: 100%; border-collapse: collapse; min-width: 520px; }
+    th, td { padding: 12px 14px; border: 1px solid #dbe2ea; text-align: left; vertical-align: top; }
+    th { background: #f7f9fc; color: #475569; }
+    .error { color: #b42318; }
+    .muted { color: #64748b; }
+    .dashboard-row { margin: 18px 0; }
+    .dashboard-label { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 7px; font-weight: 700; }
+    .bar-track { height: 20px; border-radius: 99px; background: #e8edf5; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: inherit; background: #2563eb; }
+    .bar-fill.thailand { background: #f59e0b; }
+    @media (max-width: 640px) { header { flex-direction: column; } main { margin: 20px auto; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+      <h1 id="title">Báo cáo bài viết</h1>
+        <p id="source" class="source"></p>
+      </div>
+      <nav><a class="back" href="/articles">← Tất cả bài viết</a> · <a class="back" href="/">Thêm bài viết</a></nav>
+    </header>
+    <section class="card">
+      <h2>Kết luận trong bài viết</h2>
+      <div id="conclusion" class="markdown">Đang tải bài viết...</div>
+    </section>
+    <section class="card" id="dashboard">
+      <h2>Dashboard số container xuất khẩu theo ngày</h2>
+      <p class="muted">Số container sầu riêng Việt Nam và Thái Lan qua hải quan đường bộ Trung Quốc, trích từ bài WeChat. Chỉ hiển thị ngày có số liệu xác định.</p>
+      <div id="dashboard-content">Đang tải số liệu...</div>
+    </section>
+    <section class="card" id="article">
+      <details>
+        <summary><strong>Bài viết đầy đủ</strong> — mở để xem toàn văn, bảng và ảnh</summary>
+        <div id="original-article" class="markdown" style="margin-top:20px">Đang tải bài viết...</div>
+      </details>
+    </section>
+  </main>
+  <script>
+    const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[char]);
+    function inlineMarkdown(value) {
+      return escapeHtml(value)
+        .replace(/!\[([^\]]*)\]\(((?:https?:\/\/|\/)[^)\s]+)\)/g, '<img src="$2" alt="$1" loading="lazy">')
+        .replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/)[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>');
+    }
+    function renderMarkdown(value) {
+      const lines = String(value ?? '').replace(/\\n/g, '\n').split(/\r?\n/);
+      let html = '', index = 0, listType = '';
+      const closeList = () => { if (listType) html += `</${listType}>`; listType = ''; };
+      while (index < lines.length) {
+        const line = lines[index];
+        if (/^\s*\|/.test(line) && index + 1 < lines.length && /^\s*\|?\s*:?-+/.test(lines[index + 1])) {
+          closeList();
+          const rows = [];
+          while (index < lines.length && /^\s*\|/.test(lines[index])) {
+            const cells = lines[index].trim().replace(/^\||\|$/g, '').split('|').map(cell => cell.trim());
+            if (!cells.every(cell => /^[-: ]+$/.test(cell))) rows.push(cells);
+            index += 1;
+          }
+          if (rows.length) {
+            html += '<div class="table-wrap"><table><thead><tr>' + rows[0].map(cell => `<th>${inlineMarkdown(cell)}</th>`).join('') + '</tr></thead><tbody>';
+            html += rows.slice(1).map(row => '<tr>' + row.map(cell => `<td>${inlineMarkdown(cell)}</td>`).join('') + '</tr>').join('');
+            html += '</tbody></table></div>';
+          }
+          continue;
+        }
+        const unordered = line.match(/^\s*[-*]\s+(.+)/);
+        const ordered = line.match(/^\s*\d+[.)]\s+(.+)/);
+        if (unordered || ordered) {
+          const nextType = unordered ? 'ul' : 'ol';
+          if (listType !== nextType) { closeList(); listType = nextType; html += `<${listType}>`; }
+          html += `<li>${inlineMarkdown((unordered || ordered)[1])}</li>`;
+          index += 1;
+          continue;
+        }
+        closeList();
+        if (/^###\s+/.test(line)) html += `<h3>${inlineMarkdown(line.replace(/^###\s+/, ''))}</h3>`;
+        else if (/^##\s+/.test(line)) html += `<h2>${inlineMarkdown(line.replace(/^##\s+/, ''))}</h2>`;
+        else if (/^#\s+/.test(line)) html += `<h2>${inlineMarkdown(line.replace(/^#\s+/, ''))}</h2>`;
+        else if (line.trim()) html += `<p>${inlineMarkdown(line)}</p>`;
+        index += 1;
+      }
+      closeList();
+      return html;
+    }
+    async function loadReport() {
+      const conclusionElement = document.querySelector('#conclusion');
+      try {
+        const id = new URLSearchParams(location.search).get('id');
+        const validId = id && /^[^/]+\/\d{4}\/\d{2}\/\d{2}\/[^/]+$/.test(id);
+        if (id && !validId) throw new Error('Mã bài viết không hợp lệ.');
+        const path = validId ? '/api/reports/' + id.split('/').map(encodeURIComponent).join('/') : '/api/latest-report';
+        const response = await fetch(path + '?ts=' + Date.now(), {cache: 'no-store'});
+        if (!response.ok) throw new Error('Chưa có bài viết');
+        const data = await response.json();
+        const report = data.analysis?.report || {};
+        document.querySelector('#title').textContent = data.metadata?.title || 'Báo cáo bài viết';
+        document.querySelector('#source').textContent = data.metadata?.account_name || '';
+        conclusionElement.innerHTML = renderMarkdown(report.conclusion || 'Bài viết không có mục kết luận.');
+        document.querySelector('#original-article').innerHTML = renderMarkdown(report.report_content || 'Không tìm thấy bài viết.');
+      } catch (error) {
+        conclusionElement.className = 'markdown error';
+        conclusionElement.textContent = error.message;
+        document.querySelector('#original-article').textContent = 'Không tải được bài viết.';
+      }
+    }
+    async function loadDashboard() {
+      const element = document.querySelector('#dashboard-content');
+      try {
+        const response = await fetch('/api/export-vehicles/daily?ts=' + Date.now(), {cache: 'no-store'});
+        if (!response.ok) throw new Error('Không tải được số liệu dashboard.');
+        const {items = []} = await response.json();
+        if (!items.length) { element.textContent = 'Chưa có bài viết chứa số container qua hải quan đường bộ theo ngày.'; return; }
+        const max = Math.max(...items.flatMap(item => [item.vietnam, item.thailand]), 1);
+        element.innerHTML = items.map(item => {
+          const source = item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener">Nguồn bài WeChat</a>` : escapeHtml(item.source_title);
+          return `<h3>Ngày ${escapeHtml(item.date)} · Tổng ${item.total} container</h3>` +
+            [['Việt Nam', item.vietnam, ''], ['Thái Lan', item.thailand, 'thailand']].map(([name, count, kind]) =>
+              `<div class="dashboard-row"><div class="dashboard-label"><span>${name}</span><span>${count} container</span></div><div class="bar-track"><div class="bar-fill ${kind}" style="width:${100 * count / max}%"></div></div></div>`
+            ).join('') + `<p class="muted">${source}</p>`;
+        }).join('');
+      } catch (error) {
+        element.className = 'error';
+        element.textContent = error.message;
+      }
+    }
+    loadReport();
+    loadDashboard();
+  </script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bài viết đã lưu · WeChat Intelligence</title>
+  <style>
+    :root { font-family: Inter, system-ui, sans-serif; color: #172033; background: #f3f6fb; }
+    body { margin: 0; } main { width: min(960px, calc(100% - 32px)); margin: 36px auto; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+    h1 { margin: 0 0 6px; font-size: clamp(28px, 5vw, 40px); }
+    h2 { margin: 0 0 10px; font-size: 21px; line-height: 1.4; }
+    p { color: #64748b; line-height: 1.6; }
+    a { color: #2563eb; text-decoration: none; font-weight: 700; }
+    .action { display: inline-block; background: #2563eb; color: white; padding: 12px 18px; border-radius: 10px; }
+    input { width: 100%; box-sizing: border-box; padding: 14px; border: 1px solid #cbd5e1; border-radius: 10px; font: inherit; margin: 8px 0 18px; }
+    .card { background: white; border: 1px solid #e1e7f0; border-radius: 15px; padding: 22px; margin-bottom: 14px; box-shadow: 0 8px 25px #1720330d; }
+    .meta { margin: 0 0 14px; font-size: 14px; }
+    .error { color: #b42318; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div><h1>Bài viết đã lưu</h1><p id="count">Đang tải danh sách...</p></div>
+      <a class="action" href="/">+ Thêm bài viết</a>
+    </header>
+    <label for="search"><strong>Tìm bài viết</strong></label>
+    <input id="search" type="search" placeholder="Nhập tiêu đề hoặc tên tài khoản">
+    <div id="list" role="status" aria-live="polite"></div>
+  </main>
+  <script>
+    const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[char]);
+    let articles = [];
+    function render() {
+      const query = document.querySelector('#search').value.trim().toLocaleLowerCase();
+      const filtered = articles.filter(article => (article.title + ' ' + article.account_name).toLocaleLowerCase().includes(query));
+      document.querySelector('#count').textContent = articles.length + ' bài viết đã lưu';
+      document.querySelector('#list').innerHTML = filtered.length ? filtered.map(article => {
+        const href = '/report?id=' + encodeURIComponent(article.id);
+        const date = article.published_at || article.time || '';
+        return `<article class="card"><h2><a href="${href}">${escapeHtml(article.title)}</a></h2>` +
+          `<p class="meta">${escapeHtml(article.account_name)}${date ? ' · ' + escapeHtml(date) : ''}</p>` +
+          `<a href="${href}">Xem chi tiết →</a></article>`;
+      }).join('') : '<p>Không tìm thấy bài viết phù hợp.</p>';
+    }
+    document.querySelector('#search').addEventListener('input', render);
+    fetch('/api/reports?ts=' + Date.now(), {cache: 'no-store'})
+      .then(response => { if (!response.ok) throw new Error('Không tải được danh sách bài viết.'); return response.json(); })
+      .then(data => { articles = data; render(); })
+      .catch(error => { document.querySelector('#count').textContent = ''; document.querySelector('#list').innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`; });
+  </script>
+</body>
+</html>

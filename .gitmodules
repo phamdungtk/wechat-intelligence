@@ -1,0 +1,3 @@
+[submodule "vendor/wechat-article-downloader-skill"]
+	path = vendor/wechat-article-downloader-skill
+	url = https://github.com/tingaidehua/wechat-article-downloader-skill.git
