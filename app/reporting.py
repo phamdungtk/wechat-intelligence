@@ -69,6 +69,7 @@ def daily_vehicle_counts(raw_root: Path) -> list[dict]:
             if not date:
                 continue
             values = {}
+            evidence_rows = []
             for row in window:
                 if not row.startswith("|"):
                     continue
@@ -79,12 +80,13 @@ def daily_vehicle_counts(raw_root: Path) -> list[dict]:
                 match = count_pattern.search(row)
                 if key and match:
                     values[key] = int(match.group(1).replace(",", ""))
+                    evidence_rows.append(row.strip())
             if "vietnam" not in values or "thailand" not in values:
                 continue
             calculated = values["vietnam"] + values["thailand"]
             if values.get("total", calculated) != calculated:
                 continue
-            candidates.append((date, values))
+            candidates.append((date, values, "\n".join(evidence_rows)))
             break
         if not candidates:
             for line in lines:
@@ -97,9 +99,9 @@ def daily_vehicle_counts(raw_root: Path) -> list[dict]:
                     candidates.append((date_match.group(), {
                         "vietnam": int(vietnam_match.group(1).replace(",", "")),
                         "thailand": int(thailand_match.group(1).replace(",", "")),
-                    }))
+                    }, line.strip()))
                     break
-        for date, values in candidates:
+        for date, values, evidence in candidates:
             calculated = values["vietnam"] + values["thailand"]
             metadata_path = path.with_name("metadata.json")
             try:
@@ -114,6 +116,8 @@ def daily_vehicle_counts(raw_root: Path) -> list[dict]:
                 "unit": "container",
                 "source_title": metadata.get("title", ""),
                 "source_url": metadata.get("url", ""),
+                "source_id": "/".join(path.parent.relative_to(raw_root).parts),
+                "source_excerpt": evidence,
             }
             if date not in records or path.stat().st_mtime > records[date]["_mtime"]:
                 record["_mtime"] = path.stat().st_mtime

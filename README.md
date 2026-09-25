@@ -47,7 +47,9 @@ Tệp `.env` chỉ cần khi dùng chức năng lịch sử tài khoản; luồn
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Mở [http://127.0.0.1:8000/](http://127.0.0.1:8000/), dán link bài viết WeChat, rồi chọn **Lấy bài viết**. Mỗi lần tải được lưu trong thư mục riêng dưới `storage/raw/`; các bài cũ không bị xóa. Mở [Bài viết đã lưu](http://127.0.0.1:8000/articles) để tìm và xem chi tiết từng bài. Trang chi tiết hiển thị kết luận có trong bài, toàn văn và dashboard số container Việt Nam, Thái Lan theo ngày. Dashboard chỉ có ngày 20/09/2026 trong dữ liệu mẫu hiện tại; thêm bài có cùng bảng hải quan để bổ sung ngày. Dừng máy chủ bằng `Ctrl+C`.
+Mở [http://127.0.0.1:8000/](http://127.0.0.1:8000/), dán link bài viết WeChat, rồi chọn **Lấy bài viết**. Mỗi lần tải được lưu trong thư mục riêng dưới `storage/raw/`; các bài cũ không bị xóa. Mở [Bài viết đã lưu](http://127.0.0.1:8000/articles) để tìm và xem chi tiết từng bài. Trang chi tiết hiển thị kết luận có trong bài, toàn văn và dashboard số container Việt Nam, Thái Lan theo ngày. Thêm bài có bảng hải quan để bổ sung ngày vào dashboard. Dừng máy chủ bằng `Ctrl+C`.
+
+Nút **Cập nhật bài viết** ở danh sách và trang chi tiết tải lại URL gốc của đúng bài đã lưu, giữ nguyên mã bài viết và lưu bản trước trong `storage/versions/`. Dashboard không dùng AI hay nguồn dữ liệu riêng: mỗi lần mở trang, ứng dụng đọc các tệp `storage/raw/.../article.md`, tìm bảng hải quan đường bộ có ngày và số container Việt Nam/Thái Lan. Mỗi dòng dashboard có link tới bài đã lưu và trích đoạn số liệu gốc.
 
 Nếu PowerShell chặn lệnh kích hoạt môi trường ảo, chạy trực tiếp bằng `.\.venv\Scripts\python.exe -m pip install -r requirements.txt` và `.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000`.
 

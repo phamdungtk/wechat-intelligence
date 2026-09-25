@@ -4,8 +4,11 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import tkinter
 from datetime import datetime
+from threading import Lock
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
@@ -26,6 +29,7 @@ load_dotenv(BASE_DIR / ".env")
 app = FastAPI(title="WeChat Intelligence")
 app.mount("/stored", StaticFiles(directory=BASE_DIR / "storage"), name="stored")
 account_downloader = WeChatAccountDownloader(BASE_DIR)
+refresh_lock = Lock()
 
 
 def _saved_articles() -> list[tuple[Path, dict, Path]]:
@@ -50,6 +54,16 @@ def _saved_articles() -> list[tuple[Path, dict, Path]]:
 
 def _article_id(path: Path) -> str:
     return "/".join(path.parent.relative_to(BASE_DIR / "storage" / "raw").parts)
+
+
+def _saved_article_directory(account: str, year: str, month: str, day: str, stamp: str) -> Path:
+    raw_root = (BASE_DIR / "storage" / "raw").resolve()
+    directory = (raw_root / account / year / month / day / stamp).resolve()
+    if not directory.is_relative_to(raw_root) or len(directory.relative_to(raw_root).parts) != 5:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài viết")
+    if not (directory / "metadata.json").is_file() or not (directory / "article.md").is_file():
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài viết")
+    return directory
 
 
 def _weixin_executable() -> Path | None:
@@ -116,16 +130,92 @@ def reports():
 
 @app.get("/api/reports/{account}/{year}/{month}/{day}/{stamp}")
 def report_by_id(account: str, year: str, month: str, day: str, stamp: str):
-    raw_root = (BASE_DIR / "storage" / "raw").resolve()
-    directory = (raw_root / account / year / month / day / stamp).resolve()
-    if not directory.is_relative_to(raw_root) or len(directory.relative_to(raw_root).parts) != 5:
-        raise HTTPException(status_code=404, detail="Không tìm thấy báo cáo")
+    directory = _saved_article_directory(account, year, month, day, stamp)
     metadata_path = directory / "metadata.json"
     article_path = directory / "article.md"
-    if not metadata_path.is_file() or not article_path.is_file():
-        raise HTTPException(status_code=404, detail="Không tìm thấy báo cáo")
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     return {"id": _article_id(metadata_path), **article_report(metadata, article_path.read_text(encoding="utf-8"))}
+
+
+@app.post("/api/reports/{account}/{year}/{month}/{day}/{stamp}/refresh")
+def refresh_report(account: str, year: str, month: str, day: str, stamp: str):
+    """Fetch the saved article's original URL and replace this record in place."""
+    with refresh_lock:
+        directory = _saved_article_directory(account, year, month, day, stamp)
+        metadata_path = directory / "metadata.json"
+        old_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        source_url = str(old_metadata.get("url") or "")
+        parsed = urlparse(source_url)
+        if parsed.scheme != "https" or parsed.hostname != "mp.weixin.qq.com" or not re.match(r"^/s(?:/|$)", parsed.path):
+            raise HTTPException(status_code=400, detail="Bài viết này không có link WeChat hợp lệ để cập nhật.")
+
+        storage_root = BASE_DIR / "storage"
+        with tempfile.TemporaryDirectory(prefix="wechat-refresh-", dir=storage_root) as temporary:
+            temporary_root = Path(temporary)
+            try:
+                exported = account_downloader.service.download_article(
+                    source_url,
+                    formats="html,md,json",
+                    output_dir=temporary_root / "download",
+                    include_assets=True,
+                )
+                source_dir = Path(str(exported["directory"]))
+                source_metadata = dict(exported.get("article") or {})
+            except Exception as upstream_error:
+                fallback_root = temporary_root / "fallback" / "raw"
+                fallback_root.mkdir(parents=True, exist_ok=True)
+                fallback_dir = download_article(source_url, base_storage_dir=str(fallback_root))
+                if not fallback_dir:
+                    raise HTTPException(status_code=502, detail=f"Không tải lại được bài viết: {upstream_error}") from upstream_error
+                source_dir = Path(fallback_dir)
+                source_metadata = json.loads((source_dir / "metadata.json").read_text(encoding="utf-8"))
+
+            source_md = source_dir / "article.md"
+            if not source_md.is_file() or not source_md.read_text(encoding="utf-8").strip():
+                raise HTTPException(status_code=502, detail="Bài viết tải lại không có nội dung.")
+            prepared = temporary_root / "prepared"
+            prepared.mkdir()
+            content = source_md.read_text(encoding="utf-8")
+            public_prefix = "/stored/" + "/".join(directory.relative_to(BASE_DIR).parts)
+            content = re.sub(r"\]\((assets/[^)]+)\)", rf"]({public_prefix}/\1)", content)
+            (prepared / "article.md").write_text(content, encoding="utf-8")
+            if (source_dir / "article.html").is_file():
+                shutil.copy2(source_dir / "article.html", prepared / "article.html")
+            if (source_dir / "assets").is_dir():
+                shutil.copytree(source_dir / "assets", prepared / "assets")
+
+            metadata = dict(old_metadata)
+            metadata.update({
+                "title": source_metadata.get("title") or old_metadata.get("title"),
+                "account_name": source_metadata.get("account_name") or old_metadata.get("account_name"),
+                "author": source_metadata.get("author") or old_metadata.get("author"),
+                "published_at": source_metadata.get("published_at") or old_metadata.get("published_at"),
+                "image_urls": source_metadata.get("image_urls") or [
+                    str(asset.get("remote_url")) for asset in source_metadata.get("assets", [])
+                    if isinstance(asset, dict) and asset.get("remote_url")
+                ],
+                "assets": source_metadata.get("assets") or [],
+                "refreshed_at": datetime.now().isoformat(),
+                "status": "downloaded",
+            })
+            report_data = article_report(metadata, content)
+            (prepared / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+            (prepared / "analysis.json").write_text(json.dumps(report_data, ensure_ascii=False, indent=2), encoding="utf-8")
+            (prepared / "report.md").write_text(
+                f"# {metadata['title']}\n\n## Kết luận từ bài viết\n\n{report_data['analysis']['report']['conclusion']}\n",
+                encoding="utf-8",
+            )
+
+            version_root = storage_root / "versions" / directory.relative_to(storage_root / "raw")
+            version_root.mkdir(parents=True, exist_ok=True)
+            previous_version = version_root / f"{datetime.now().strftime('%Y%m%d-%H%M%S%f')}-{uuid4().hex}"
+            directory.rename(previous_version)
+            try:
+                prepared.rename(directory)
+            except Exception:
+                previous_version.rename(directory)
+                raise
+            return {"id": _article_id(directory / "metadata.json"), **report_data}
 
 
 @app.get("/api/preview/{account}/{year}/{month}/{day}/{stamp}", response_class=HTMLResponse)

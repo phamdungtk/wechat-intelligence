@@ -14,6 +14,9 @@
     h3 { margin-top: 26px; }
     .source { margin: 0; color: #64748b; }
     .back { color: #2563eb; text-decoration: none; font-weight: 700; white-space: nowrap; }
+    .refresh-button { border: 0; border-radius: 9px; padding: 10px 14px; color: white; background: #2563eb; font: inherit; font-weight: 700; cursor: pointer; }
+    .refresh-button:disabled { opacity: .6; cursor: wait; }
+    .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
     .card { background: white; border: 1px solid #e1e7f0; border-radius: 16px; padding: clamp(20px, 4vw, 34px); margin-bottom: 18px; box-shadow: 0 8px 25px #1720330d; }
     .markdown { font-size: 17px; line-height: 1.75; overflow-wrap: anywhere; }
     .markdown p { margin: 12px 0; }
@@ -31,6 +34,7 @@
     .bar-track { height: 20px; border-radius: 99px; background: #e8edf5; overflow: hidden; }
     .bar-fill { height: 100%; border-radius: inherit; background: #2563eb; }
     .bar-fill.thailand { background: #f59e0b; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f7f9fc; padding: 12px; border-radius: 8px; }
     @media (max-width: 640px) { header { flex-direction: column; } main { margin: 20px auto; } }
   </style>
 </head>
@@ -41,15 +45,16 @@
       <h1 id="title">Báo cáo bài viết</h1>
         <p id="source" class="source"></p>
       </div>
-      <nav><a class="back" href="/articles">← Tất cả bài viết</a> · <a class="back" href="/">Thêm bài viết</a></nav>
+      <nav class="actions"><a class="back" href="/articles">← Tất cả bài viết</a><a class="back" href="/">Thêm bài viết</a><button class="refresh-button" id="refresh-article" type="button" disabled>Cập nhật bài viết</button></nav>
     </header>
+    <p id="refresh-status" class="muted" role="status" aria-live="polite"></p>
     <section class="card">
       <h2>Kết luận trong bài viết</h2>
       <div id="conclusion" class="markdown">Đang tải bài viết...</div>
     </section>
     <section class="card" id="dashboard">
       <h2>Dashboard số container xuất khẩu theo ngày</h2>
-      <p class="muted">Số container sầu riêng Việt Nam và Thái Lan qua hải quan đường bộ Trung Quốc, trích từ bài WeChat. Chỉ hiển thị ngày có số liệu xác định.</p>
+      <p class="muted">Số container sầu riêng Việt Nam và Thái Lan được đọc trực tiếp từ các bài WeChat đã lưu. Mỗi ngày có link tới bài và dòng số liệu gốc.</p>
       <div id="dashboard-content">Đang tải số liệu...</div>
     </section>
     <section class="card" id="article">
@@ -60,7 +65,9 @@
     </section>
   </main>
   <script>
+    let currentId = '';
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[char]);
+    const reportApiPath = id => '/api/reports/' + id.split('/').map(encodeURIComponent).join('/');
     function inlineMarkdown(value) {
       return escapeHtml(value)
         .replace(/!\[([^\]]*)\]\(((?:https?:\/\/|\/)[^)\s]+)\)/g, '<img src="$2" alt="$1" loading="lazy">')
@@ -114,16 +121,21 @@
         const id = new URLSearchParams(location.search).get('id');
         const validId = id && /^[^/]+\/\d{4}\/\d{2}\/\d{2}\/[^/]+$/.test(id);
         if (id && !validId) throw new Error('Mã bài viết không hợp lệ.');
-        const path = validId ? '/api/reports/' + id.split('/').map(encodeURIComponent).join('/') : '/api/latest-report';
+        const path = validId ? reportApiPath(id) : '/api/latest-report';
         const response = await fetch(path + '?ts=' + Date.now(), {cache: 'no-store'});
         if (!response.ok) throw new Error('Chưa có bài viết');
         const data = await response.json();
+        currentId = data.id || '';
+        document.querySelector('#refresh-article').disabled = !currentId;
+        conclusionElement.className = 'markdown';
         const report = data.analysis?.report || {};
         document.querySelector('#title').textContent = data.metadata?.title || 'Báo cáo bài viết';
         document.querySelector('#source').textContent = data.metadata?.account_name || '';
         conclusionElement.innerHTML = renderMarkdown(report.conclusion || 'Bài viết không có mục kết luận.');
         document.querySelector('#original-article').innerHTML = renderMarkdown(report.report_content || 'Không tìm thấy bài viết.');
       } catch (error) {
+        currentId = '';
+        document.querySelector('#refresh-article').disabled = true;
         conclusionElement.className = 'markdown error';
         conclusionElement.textContent = error.message;
         document.querySelector('#original-article').textContent = 'Không tải được bài viết.';
@@ -135,20 +147,42 @@
         const response = await fetch('/api/export-vehicles/daily?ts=' + Date.now(), {cache: 'no-store'});
         if (!response.ok) throw new Error('Không tải được số liệu dashboard.');
         const {items = []} = await response.json();
+        element.className = '';
         if (!items.length) { element.textContent = 'Chưa có bài viết chứa số container qua hải quan đường bộ theo ngày.'; return; }
         const max = Math.max(...items.flatMap(item => [item.vietnam, item.thailand]), 1);
         element.innerHTML = items.map(item => {
-          const source = item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener">Nguồn bài WeChat</a>` : escapeHtml(item.source_title);
+          const savedLink = item.source_id ? `<a href="/report?id=${encodeURIComponent(item.source_id)}">Xem bài đã lưu</a>` : escapeHtml(item.source_title);
+          const sourceLink = item.source_url ? ` · <a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener">Bài gốc WeChat</a>` : '';
+          const evidence = item.source_excerpt ? `<details><summary>Dòng số liệu trong bài</summary><pre>${escapeHtml(item.source_excerpt)}</pre></details>` : '';
           return `<h3>Ngày ${escapeHtml(item.date)} · Tổng ${item.total} container</h3>` +
             [['Việt Nam', item.vietnam, ''], ['Thái Lan', item.thailand, 'thailand']].map(([name, count, kind]) =>
               `<div class="dashboard-row"><div class="dashboard-label"><span>${name}</span><span>${count} container</span></div><div class="bar-track"><div class="bar-fill ${kind}" style="width:${100 * count / max}%"></div></div></div>`
-            ).join('') + `<p class="muted">${source}</p>`;
+            ).join('') + `<p class="muted">${savedLink}${sourceLink}</p>${evidence}`;
         }).join('');
       } catch (error) {
         element.className = 'error';
         element.textContent = error.message;
       }
     }
+    async function refreshArticle() {
+      if (!currentId) return;
+      const button = document.querySelector('#refresh-article');
+      const status = document.querySelector('#refresh-status');
+      button.disabled = true;
+      status.textContent = 'Đang tải lại bài viết từ link gốc...';
+      try {
+        const response = await fetch(reportApiPath(currentId) + '/refresh', {method: 'POST'});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Không cập nhật được bài viết.');
+        await Promise.all([loadReport(), loadDashboard()]);
+        status.textContent = 'Đã cập nhật bài viết và dashboard từ nội dung mới.';
+      } catch (error) {
+        status.textContent = error.message;
+      } finally {
+        button.disabled = !currentId;
+      }
+    }
+    document.querySelector('#refresh-article').addEventListener('click', refreshArticle);
     loadReport();
     loadDashboard();
   </script>
