@@ -1,6 +1,9 @@
 services:
   wechat-desktop:
-    image: lscr.io/linuxserver/weixin:latest
+    build:
+      context: .
+      dockerfile: wechat-desktop.Dockerfile
+    image: wechat-intelligence-desktop:local
     container_name: wechat-intelligence-desktop
     environment:
       PUID: "10100"

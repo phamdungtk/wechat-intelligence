@@ -19,6 +19,33 @@ Script cài service `wechat-intelligence` cho người dùng đang chạy `sudo`
 
 Sau khi cập nhật mã nguồn, chạy lại `sudo bash deploy/install-service.sh` để áp dụng cấu hình và khởi động lại service. Dữ liệu bài viết trong `storage/` được giữ nguyên.
 
+### WeChat Desktop trên Ubuntu
+
+Phiên WeChat Linux chạy riêng trong Docker, không thay đổi service API cổng 3435. Khởi động bằng:
+
+```bash
+cd ~/apps/wechat-intelligence
+docker compose -f deploy/wechat-desktop.compose.yml up -d
+docker compose -f deploy/wechat-desktop.compose.yml ps
+```
+
+Giao diện chỉ nghe trên `127.0.0.1:3436` của server. Từ máy cá nhân, mở một terminal và giữ lệnh SSH tunnel này chạy:
+
+```bash
+ssh -N -L 3436:127.0.0.1:3436 root@IP_MAY_CHU
+```
+
+Sau đó mở `https://127.0.0.1:3436/` trên máy cá nhân, chấp nhận chứng chỉ tự ký của giao diện nội bộ và quét QR bằng WeChat trên điện thoại. Dữ liệu phiên được giữ tại `storage/wechat_desktop/config/`; không đưa thư mục này lên Git. Cổng 3436 không được mở trực tiếp ra Internet.
+
+Khi đã đăng nhập, có thể bật dịch vụ đọc link được sao chép trong WeChat Desktop:
+
+```bash
+sudo bash deploy/install-desktop-collector.sh
+sudo journalctl -u wechat-intelligence-collector -f
+```
+
+Mỗi link bài WeChat mới trong clipboard của phiên desktop sẽ được tải qua luồng hiện có, lưu thành một bài riêng và xuất hiện trong dashboard. Dịch vụ bỏ qua URL đã có trong kho bài viết.
+
 ### Bật báo cáo tiếng Việt cho bài tiếng Trung
 
 Tạo OpenAI API key theo [hướng dẫn chính thức](https://developers.openai.com/api/docs/quickstart). Trên Ubuntu, mở `~/apps/wechat-intelligence/.env`, thêm `OPENAI_API_KEY=...` và có thể đặt `OPENAI_REPORT_MODEL=gpt-4.1-mini`, rồi chạy `sudo systemctl restart wechat-intelligence`. Giữ `.env` trên máy chủ; tệp này đã được Git bỏ qua. Không gửi API key qua chat hoặc đưa vào Git.
