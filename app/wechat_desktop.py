@@ -58,7 +58,7 @@ def screenshot(output: Path) -> Path:
 def read_screen() -> list[dict]:
     remote = "/tmp/wechat-intelligence-screen.png"
     docker_exec("scrot", "-z", "-o", remote)
-    result = docker_exec("tesseract", remote, "stdout", "-l", "chi_sim+eng", "tsv")
+    result = docker_exec("tesseract", remote, "stdout", "-l", "chi_sim+eng", "--psm", "11", "tsv")
     rows = []
     for line in result.stdout.splitlines()[1:]:
         cells = line.split("\t", 11)
