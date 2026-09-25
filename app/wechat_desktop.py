@@ -99,8 +99,24 @@ def saved_article_urls() -> set[str]:
 
 def import_clipboard_article() -> dict | None:
     url = clipboard_article_url()
-    if not url or url in saved_article_urls():
+    if not url:
         return None
+    from app.main import _saved_articles
+
+    saved = None
+    for metadata_path, metadata, _ in _saved_articles():
+        if str(metadata.get("url") or "") == url:
+            saved = (metadata_path, metadata, article_path)
+            break
+    if saved:
+        from app.main import _translate_saved_article
+
+        metadata_path, metadata, article_path = saved
+        translated = _translate_saved_article(metadata_path.parent)
+        LOGGER.info("Article already saved; report status=%s", translated["analysis"]["status"])
+        return {"id": "/".join(metadata_path.parent.relative_to(BASE_DIR / "storage" / "raw").parts),
+                "title": metadata.get("title", ""), "existing": True,
+                "report_status": translated["analysis"]["status"]}
     from app.main import _process_article_url
 
     result = _process_article_url(url)

@@ -37,14 +37,14 @@ ssh -N -L 3436:127.0.0.1:3436 root@IP_MAY_CHU
 
 Sau đó mở `https://127.0.0.1:3436/` trên máy cá nhân, chấp nhận chứng chỉ tự ký của giao diện nội bộ và quét QR bằng WeChat trên điện thoại. Dữ liệu phiên được giữ tại `storage/wechat_desktop/config/`; không đưa thư mục này lên Git. Cổng 3436 không được mở trực tiếp ra Internet.
 
-Khi đã đăng nhập, có thể bật dịch vụ đọc link được sao chép trong WeChat Desktop:
+Khi đã đăng nhập vào WeChat và thấy bài mới nhất của tài khoản **榴莲产业网** trong mục **Official Accounts**, bật dịch vụ tự kiểm tra bài mới mỗi giờ và đọc mọi link bài được sao chép trong WeChat Desktop:
 
 ```bash
 sudo bash deploy/install-desktop-collector.sh
 sudo journalctl -u wechat-intelligence-collector -f
 ```
 
-Mỗi link bài WeChat mới trong clipboard của phiên desktop sẽ được tải qua luồng hiện có, lưu thành một bài riêng và xuất hiện trong dashboard. Dịch vụ bỏ qua URL đã có trong kho bài viết.
+Mỗi giờ dịch vụ mở bài mới nhất trong **Official Accounts**, chọn **CopyLink**, tải bài và lưu riêng vào dashboard. Link đã lưu sẽ không bị tạo trùng; nếu bài cũ chưa có báo cáo tiếng Việt, dịch vụ sẽ thử tạo lại khi OpenAI API key đã được cấu hình. Link WeChat bạn tự sao chép cũng được nhận tự động. Xem log bằng `sudo journalctl -u wechat-intelligence-collector -f`.
 
 ### Bật báo cáo tiếng Việt cho bài tiếng Trung
 

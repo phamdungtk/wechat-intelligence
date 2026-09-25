@@ -38,7 +38,10 @@ def article_report(metadata: dict, content: str, vietnamese: dict | None = None,
         summary = vietnamese["summary"]
         status = "completed"
         source = "openai"
-    elif contains_chinese(content) and source_conclusion(content) == "Bài viết không có mục kết luận bằng tiếng Việt.":
+    elif contains_chinese(content) and (
+        source_conclusion(content) == "Bài viết không có mục kết luận bằng tiếng Việt."
+        or re.search(r"[\u3400-\u9fff]", source_conclusion(content))
+    ):
         conclusion = translation_error or "Chưa có kết luận tiếng Việt. Hãy cấu hình OpenAI API và chọn ‘Tạo báo cáo tiếng Việt’."
         summary = ""
         status = "needs_translation"
