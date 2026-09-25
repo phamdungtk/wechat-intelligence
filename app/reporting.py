@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from app.vietnamese_report import contains_chinese
 
 
 def source_conclusion(content: str) -> str:
@@ -31,14 +32,29 @@ def source_conclusion(content: str) -> str:
     return "Bài viết không có mục kết luận bằng tiếng Việt."
 
 
-def article_report(metadata: dict, content: str) -> dict:
-    conclusion = source_conclusion(content)
+def article_report(metadata: dict, content: str, vietnamese: dict | None = None, translation_error: str = "") -> dict:
+    if vietnamese:
+        conclusion = vietnamese["conclusion"]
+        summary = vietnamese["summary"]
+        status = "completed"
+        source = "openai"
+    elif contains_chinese(content) and source_conclusion(content) == "Bài viết không có mục kết luận bằng tiếng Việt.":
+        conclusion = translation_error or "Chưa có kết luận tiếng Việt. Hãy cấu hình OpenAI API và chọn ‘Tạo báo cáo tiếng Việt’."
+        summary = ""
+        status = "needs_translation"
+        source = "article"
+    else:
+        conclusion = source_conclusion(content)
+        summary = ""
+        status = "completed"
+        source = "article"
     return {
         "metadata": metadata,
         "analysis": {
-            "status": "completed",
-            "source": "article",
-            "report": {"report_content": content, "conclusion": conclusion},
+            "status": status,
+            "source": source,
+            "translation_error": translation_error,
+            "report": {"report_content": content, "summary": summary, "conclusion": conclusion},
         },
     }
 

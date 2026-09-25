@@ -46,13 +46,18 @@
       <h1 id="title">Báo cáo bài viết</h1>
         <p id="source" class="source"></p>
       </div>
-      <nav class="actions"><a class="back" href="/articles">← Tất cả bài viết</a><a class="back" href="/">Thêm bài viết</a><button class="refresh-button" id="refresh-article" type="button" disabled>Cập nhật bài viết</button></nav>
+      <nav class="actions"><a class="back" href="/articles">← Tất cả bài viết</a><a class="back" href="/">Thêm bài viết</a><button class="refresh-button" id="generate-report" type="button" hidden>Tạo báo cáo tiếng Việt</button><button class="refresh-button" id="refresh-article" type="button" disabled>Cập nhật bài viết</button></nav>
     </header>
     <p id="refresh-status" class="muted" role="status" aria-live="polite"></p>
     <ol id="progress-log" class="progress-log" aria-label="Nhật ký cập nhật bài viết" aria-live="polite" hidden></ol>
     <section class="card">
-      <h2>Kết luận trong bài viết</h2>
+      <h2>Kết luận tiếng Việt</h2>
       <div id="conclusion" class="markdown">Đang tải bài viết...</div>
+    </section>
+    <section class="card" id="vietnamese-report" hidden>
+      <h2>Báo cáo tiếng Việt từ bài viết</h2>
+      <div id="vietnamese-summary" class="markdown"></div>
+      <p class="muted">Báo cáo do OpenAI API tạo từ bài WeChat gốc; kiểm tra số liệu quan trọng trong bài đầy đủ bên dưới.</p>
     </section>
     <section class="card" id="dashboard">
       <h2>Dashboard số container xuất khẩu theo ngày</h2>
@@ -130,8 +135,11 @@
         const data = await response.json();
         currentId = data.id || '';
         document.querySelector('#refresh-article').disabled = !currentId;
+        document.querySelector('#generate-report').hidden = !currentId || data.analysis?.status !== 'needs_translation';
         conclusionElement.className = 'markdown';
         const report = data.analysis?.report || {};
+        document.querySelector('#vietnamese-report').hidden = !report.summary;
+        document.querySelector('#vietnamese-summary').innerHTML = renderMarkdown(report.summary || '');
         document.querySelector('#title').textContent = data.metadata?.title || 'Báo cáo bài viết';
         document.querySelector('#source').textContent = data.metadata?.account_name || '';
         conclusionElement.innerHTML = renderMarkdown(report.conclusion || 'Bài viết không có mục kết luận.');
@@ -140,6 +148,8 @@
       } catch (error) {
         currentId = '';
         document.querySelector('#refresh-article').disabled = true;
+        document.querySelector('#generate-report').hidden = true;
+        document.querySelector('#vietnamese-report').hidden = true;
         conclusionElement.className = 'markdown error';
         conclusionElement.textContent = error.message;
         document.querySelector('#original-article').textContent = 'Không tải được bài viết.';
@@ -190,7 +200,26 @@
         button.disabled = !currentId;
       }
     }
+    async function generateVietnameseReport() {
+      if (!currentId) return;
+      const button = document.querySelector('#generate-report');
+      const status = document.querySelector('#refresh-status');
+      button.disabled = true;
+      status.className = 'muted';
+      status.textContent = 'Đang tạo báo cáo tiếng Việt...';
+      try {
+        await runArticleJob(reportApiPath(currentId) + '/vietnamese-report/jobs', {method: 'POST'}, document.querySelector('#progress-log'));
+        if (!await loadReport()) throw new Error('Không đọc lại được báo cáo đã lưu.');
+        status.textContent = 'Đã tạo báo cáo và kết luận tiếng Việt.';
+      } catch (error) {
+        status.className = 'error';
+        status.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    }
     document.querySelector('#refresh-article').addEventListener('click', refreshArticle);
+    document.querySelector('#generate-report').addEventListener('click', generateVietnameseReport);
     loadReport();
     loadDashboard();
   </script>

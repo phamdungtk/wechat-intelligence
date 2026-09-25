@@ -53,7 +53,13 @@ def start_job(operation: str, work) -> dict:
             job["state"] = "running"
         try:
             result = work(lambda message: _event(job, message))
-            _event(job, "Hoàn tất. Bài viết đã được lưu và phân tích.")
+            analysis = result.get("analysis", {}) if isinstance(result, dict) else {}
+            complete_message = (
+                "Đã lưu bài gốc; báo cáo tiếng Việt chưa được tạo."
+                if analysis.get("status") == "needs_translation"
+                else "Hoàn tất. Bài viết và báo cáo đã được lưu."
+            )
+            _event(job, complete_message)
             with lock:
                 job["result"] = result
                 job["state"] = "done"

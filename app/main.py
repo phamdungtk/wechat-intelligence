@@ -24,6 +24,9 @@ from app.reporting import article_report, daily_vehicle_counts
 from app.wechat_account import CAPTURE_LOG_PATH, WeChatAccountDownloader, capture_logger
 from app.wechat_history import latest_post
 from app.jobs import get_job, start_job
+from app.vietnamese_report import (
+    VietnameseReportError, has_api_key, load_cached_report, save_vietnamese_report,
+)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
@@ -67,6 +70,54 @@ def _article_id(path: Path) -> str:
     return "/".join(path.parent.relative_to(BASE_DIR / "storage" / "raw").parts)
 
 
+def _saved_report(directory: Path) -> dict:
+    metadata = json.loads((directory / "metadata.json").read_text(encoding="utf-8"))
+    content = (directory / "article.md").read_text(encoding="utf-8")
+    cached = load_cached_report(directory, content)
+    error_path = directory / "vietnamese_report_error.txt"
+    translation_error = error_path.read_text(encoding="utf-8") if error_path.is_file() and not cached else ""
+    return article_report(metadata, content, cached, translation_error)
+
+
+def _translate_saved_article(directory: Path, progress: Progress | None = None, required: bool = False) -> dict:
+    metadata = json.loads((directory / "metadata.json").read_text(encoding="utf-8"))
+    content = (directory / "article.md").read_text(encoding="utf-8")
+    cached = load_cached_report(directory, content)
+    if cached:
+        _progress(progress, "Báo cáo tiếng Việt đã có sẵn cho nội dung này.")
+        return article_report(metadata, content, cached)
+    source_report = article_report(metadata, content)
+    if source_report["analysis"]["status"] != "needs_translation" and not required:
+        return source_report
+    if not has_api_key():
+        message = "Đã lưu bài gốc, nhưng chưa tạo báo cáo tiếng Việt: thiếu OPENAI_API_KEY trên máy chủ."
+        (directory / "vietnamese_report_error.txt").write_text(message, encoding="utf-8")
+        _progress(progress, message)
+        if required:
+            raise HTTPException(status_code=503, detail=message)
+        return _saved_report(directory)
+    _progress(progress, "Đang tạo báo cáo và kết luận tiếng Việt bằng OpenAI API.")
+    try:
+        translated = save_vietnamese_report(directory, metadata, content)
+    except VietnameseReportError as exc:
+        message = f"Đã lưu bài gốc, nhưng chưa tạo được báo cáo tiếng Việt: {exc}"
+        (directory / "vietnamese_report_error.txt").write_text(message, encoding="utf-8")
+        logger.exception("Vietnamese report generation failed")
+        _progress(progress, message)
+        if required:
+            raise HTTPException(status_code=502, detail=message) from exc
+        return _saved_report(directory)
+    (directory / "vietnamese_report_error.txt").unlink(missing_ok=True)
+    report_data = article_report(metadata, content, translated)
+    (directory / "analysis.json").write_text(json.dumps(report_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    (directory / "report.md").write_text(
+        f"# {metadata.get('title', 'Báo cáo')}\n\n## Báo cáo tiếng Việt\n\n{translated['summary']}\n\n## Kết luận\n\n{translated['conclusion']}\n",
+        encoding="utf-8",
+    )
+    _progress(progress, "Đã lưu báo cáo và kết luận tiếng Việt.")
+    return report_data
+
+
 def _saved_article_directory(account: str, year: str, month: str, day: str, stamp: str) -> Path:
     raw_root = (BASE_DIR / "storage" / "raw").resolve()
     directory = (raw_root / account / year / month / day / stamp).resolve()
@@ -107,7 +158,7 @@ def latest_report():
     if not articles:
         raise HTTPException(status_code=404, detail="Chưa có báo cáo lịch sử")
     metadata_path, metadata, article_path = articles[0]
-    return {"id": _article_id(metadata_path), **article_report(metadata, article_path.read_text(encoding="utf-8"))}
+    return {"id": _article_id(metadata_path), **_saved_report(metadata_path.parent)}
 
 
 @app.get("/api/export-vehicles/daily")
@@ -143,9 +194,7 @@ def reports():
 def report_by_id(account: str, year: str, month: str, day: str, stamp: str):
     directory = _saved_article_directory(account, year, month, day, stamp)
     metadata_path = directory / "metadata.json"
-    article_path = directory / "article.md"
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    return {"id": _article_id(metadata_path), **article_report(metadata, article_path.read_text(encoding="utf-8"))}
+    return {"id": _article_id(metadata_path), **_saved_report(metadata_path.parent)}
 
 
 @app.post("/api/reports/{account}/{year}/{month}/{day}/{stamp}/refresh")
@@ -236,6 +285,7 @@ def _refresh_report(account: str, year: str, month: str, day: str, stamp: str, p
             except Exception:
                 previous_version.rename(directory)
                 raise
+            report_data = _translate_saved_article(directory, progress)
             return {"id": _article_id(directory / "metadata.json"), **report_data}
 
 
@@ -243,6 +293,14 @@ def _refresh_report(account: str, year: str, month: str, day: str, stamp: str, p
 def refresh_report_job(account: str, year: str, month: str, day: str, stamp: str):
     _saved_article_directory(account, year, month, day, stamp)
     return start_job("refresh", lambda progress: _refresh_report(account, year, month, day, stamp, progress))
+
+
+@app.post("/api/reports/{account}/{year}/{month}/{day}/{stamp}/vietnamese-report/jobs")
+def vietnamese_report_job(account: str, year: str, month: str, day: str, stamp: str):
+    directory = _saved_article_directory(account, year, month, day, stamp)
+    if not has_api_key():
+        raise HTTPException(status_code=503, detail="Chưa cấu hình OPENAI_API_KEY trên máy chủ.")
+    return start_job("vietnamese_report", lambda progress: _translate_saved_article(directory, progress, required=True))
 
 
 @app.get("/api/jobs/{job_id}")
@@ -567,8 +625,6 @@ def _process_article_url(url: str, progress: Progress | None = None):
         )
         _progress(progress, "Đã tải nội dung. Đang lưu bài và đọc số liệu.")
         result = _process_account_download(exported)
-        _progress(progress, "Đã lưu bài viết và cập nhật dashboard.")
-        return result
     except Exception as upstream_error:
         logger.warning("Primary article downloader failed", exc_info=True)
         _progress(progress, "Trình tải chính gặp lỗi. Đang thử cách tải dự phòng.")
@@ -585,8 +641,7 @@ def _process_article_url(url: str, progress: Progress | None = None):
         analysis = report_data["analysis"]
         (saved_path / "analysis.json").write_text(json.dumps(report_data, ensure_ascii=False, indent=2), encoding="utf-8")
         (saved_path / "report.md").write_text(f"# {metadata.get('title', 'Báo cáo')}\n\n## Kết luận từ bài viết\n\n{analysis['report']['conclusion']}\n", encoding="utf-8")
-        _progress(progress, "Đã lưu bài viết và cập nhật dashboard.")
-        return {
+        result = {
             "id": "/".join(saved_path.relative_to(BASE_DIR / "storage" / "raw").parts),
             "metadata": metadata,
             "content": content,
@@ -594,6 +649,9 @@ def _process_article_url(url: str, progress: Progress | None = None):
             "article_url": "/api/preview/" + "/".join(str(saved_path.relative_to(BASE_DIR / "storage" / "raw")).replace("\\", "/").split("/")),
             "analysis": analysis,
         }
+    _progress(progress, "Đã lưu bài viết và cập nhật dashboard.")
+    result["analysis"] = _translate_saved_article(BASE_DIR / result["saved_dir"], progress)["analysis"]
+    return result
 
 
 def _read_clipboard():

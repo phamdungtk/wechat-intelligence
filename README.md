@@ -1,6 +1,6 @@
 # WeChat Intelligence
 
-Ứng dụng FastAPI tải một bài viết WeChat từ link `https://mp.weixin.qq.com/s/...`, hiển thị kết luận có sẵn trong bài và số container xuất khẩu qua hải quan đường bộ Trung Quốc theo ngày. Ứng dụng không dùng AI và không dịch bài viết.
+Ứng dụng FastAPI tải bài viết WeChat từ link `https://mp.weixin.qq.com/s/...`, hiển thị kết luận và số container xuất khẩu qua hải quan đường bộ Trung Quốc theo ngày. Với bài tiếng Trung, ứng dụng có thể dùng OpenAI API để tạo kết luận và báo cáo tiếng Việt.
 
 ## Chạy trên Ubuntu bằng systemd (cổng 3435)
 
@@ -18,6 +18,12 @@ sudo bash deploy/install-service.sh
 Script cài service `wechat-intelligence` cho người dùng đang chạy `sudo`, dùng thư mục dự án hiện tại và khởi động Uvicorn trên `0.0.0.0:3435`. Service tự khởi động cùng Ubuntu và tự chạy lại khi lỗi. Kiểm tra bằng `sudo systemctl status wechat-intelligence`; xem log bằng `sudo journalctl -u wechat-intelligence -f`. Nếu UFW đang bật và cần truy cập từ máy khác, chạy `sudo ufw allow 3435/tcp` rồi mở `http://IP_MAY_CHU:3435/`.
 
 Sau khi cập nhật mã nguồn, chạy lại `sudo bash deploy/install-service.sh` để áp dụng cấu hình và khởi động lại service. Dữ liệu bài viết trong `storage/` được giữ nguyên.
+
+### Bật báo cáo tiếng Việt cho bài tiếng Trung
+
+Tạo OpenAI API key theo [hướng dẫn chính thức](https://developers.openai.com/api/docs/quickstart). Trên Ubuntu, mở `~/apps/wechat-intelligence/.env`, thêm `OPENAI_API_KEY=...` và có thể đặt `OPENAI_REPORT_MODEL=gpt-4.1-mini`, rồi chạy `sudo systemctl restart wechat-intelligence`. Giữ `.env` trên máy chủ; tệp này đã được Git bỏ qua. Không gửi API key qua chat hoặc đưa vào Git.
+
+Sau khi có key, bài tiếng Trung mới tải hoặc cập nhật sẽ tự tạo báo cáo tiếng Việt. Với bài đã lưu, mở trang chi tiết và chọn **Tạo báo cáo tiếng Việt**; không cần tải lại bài từ WeChat. Báo cáo được lưu trong thư mục của từng bài, còn dashboard tiếp tục lấy số liệu trực tiếp từ `article.md` gốc. Khi chưa cấu hình key hoặc OpenAI API lỗi, bài gốc vẫn được lưu và trang hiển thị lý do chưa có báo cáo.
 
 ## Chạy trên Windows
 
@@ -41,7 +47,7 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Tệp `.env` chỉ cần khi dùng chức năng lịch sử tài khoản; luồng nhập một link bài viết không cần cấu hình thêm.
+Tệp `.env` chỉ cần khi dùng lịch sử tài khoản hoặc tạo báo cáo tiếng Việt qua OpenAI API; luồng nhập một link bài viết vẫn tải được khi chưa có key.
 
 ```powershell
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
