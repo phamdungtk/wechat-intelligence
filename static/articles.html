@@ -15,6 +15,8 @@
     .action { display: inline-block; background: #2563eb; color: white; padding: 12px 18px; border-radius: 10px; }
     button.refresh { margin-left: 14px; border: 1px solid #2563eb; border-radius: 9px; padding: 9px 13px; background: white; color: #2563eb; font: inherit; font-weight: 700; cursor: pointer; }
     button.refresh:disabled { opacity: .6; cursor: wait; }
+    button.delete { margin-left: 8px; border: 1px solid #b42318; border-radius: 9px; padding: 9px 13px; background: white; color: #b42318; font: inherit; font-weight: 700; cursor: pointer; }
+    button.delete:disabled { opacity: .6; cursor: wait; }
     input { width: 100%; box-sizing: border-box; padding: 14px; border: 1px solid #cbd5e1; border-radius: 10px; font: inherit; margin: 8px 0 18px; }
     .card { background: white; border: 1px solid #e1e7f0; border-radius: 15px; padding: 22px; margin-bottom: 14px; box-shadow: 0 8px 25px #1720330d; }
     .meta { margin: 0 0 14px; font-size: 14px; }
@@ -45,11 +47,34 @@
         const date = article.published_at || article.time || '';
         return `<article class="card"><h2><a href="${href}">${escapeHtml(article.title)}</a></h2>` +
           `<p class="meta">${escapeHtml(article.account_name)}${date ? ' · ' + escapeHtml(date) : ''}</p>` +
-          `<a href="${href}">Xem chi tiết →</a><button class="refresh" type="button" data-id="${encodeURIComponent(article.id)}">Cập nhật bài viết</button><p class="meta refresh-status" role="status"></p><ol class="progress-log" aria-label="Nhật ký cập nhật bài viết" aria-live="polite" hidden></ol></article>`;
+          `<a href="${href}">Xem chi tiết →</a><button class="refresh" type="button" data-id="${encodeURIComponent(article.id)}">Cập nhật bài viết</button><button class="delete" type="button" data-id="${encodeURIComponent(article.id)}">Xóa bài viết</button><p class="meta refresh-status" role="status"></p><ol class="progress-log" aria-label="Nhật ký cập nhật bài viết" aria-live="polite" hidden></ol></article>`;
       }).join('') : '<p>Không tìm thấy bài viết phù hợp.</p>';
     }
     document.querySelector('#search').addEventListener('input', render);
     document.querySelector('#list').addEventListener('click', async event => {
+      const deleteButton = event.target.closest('button.delete');
+      if (deleteButton) {
+        const id = decodeURIComponent(deleteButton.dataset.id);
+        const article = articles.find(item => item.id === id);
+        if (!confirm(`Xóa bài viết “${article?.title || id}” khỏi danh sách và dashboard?`)) return;
+        const card = deleteButton.closest('article');
+        const status = card.querySelector('.refresh-status');
+        card.querySelectorAll('button').forEach(button => button.disabled = true);
+        status.textContent = 'Đang xóa bài viết...';
+        try {
+          const path = '/api/reports/' + id.split('/').map(encodeURIComponent).join('/');
+          const response = await fetch(path, {method: 'DELETE'});
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.detail || 'Không xóa được bài viết.');
+          articles = articles.filter(item => item.id !== id);
+          render();
+        } catch (error) {
+          status.className = 'meta refresh-status error';
+          status.textContent = error.message;
+          card.querySelectorAll('button').forEach(button => button.disabled = false);
+        }
+        return;
+      }
       const button = event.target.closest('button.refresh');
       if (!button) return;
       const status = button.parentElement.querySelector('.refresh-status');

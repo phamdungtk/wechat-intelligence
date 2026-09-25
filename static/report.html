@@ -16,6 +16,8 @@
     .back { color: #2563eb; text-decoration: none; font-weight: 700; white-space: nowrap; }
     .refresh-button { border: 0; border-radius: 9px; padding: 10px 14px; color: white; background: #2563eb; font: inherit; font-weight: 700; cursor: pointer; }
     .refresh-button:disabled { opacity: .6; cursor: wait; }
+    .delete-button { border: 1px solid #b42318; border-radius: 9px; padding: 9px 14px; color: #b42318; background: white; font: inherit; font-weight: 700; cursor: pointer; }
+    .delete-button:disabled { opacity: .6; cursor: wait; }
     .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
     .card { background: white; border: 1px solid #e1e7f0; border-radius: 16px; padding: clamp(20px, 4vw, 34px); margin-bottom: 18px; box-shadow: 0 8px 25px #1720330d; }
     .markdown { font-size: 17px; line-height: 1.75; overflow-wrap: anywhere; }
@@ -46,7 +48,7 @@
       <h1 id="title">Báo cáo bài viết</h1>
         <p id="source" class="source"></p>
       </div>
-      <nav class="actions"><a class="back" href="/articles">← Tất cả bài viết</a><a class="back" href="/">Thêm bài viết</a><button class="refresh-button" id="generate-report" type="button" hidden>Tạo báo cáo tiếng Việt</button><button class="refresh-button" id="refresh-article" type="button" disabled>Cập nhật bài viết</button></nav>
+      <nav class="actions"><a class="back" href="/articles">← Tất cả bài viết</a><a class="back" href="/">Thêm bài viết</a><button class="refresh-button" id="generate-report" type="button" hidden>Tạo báo cáo tiếng Việt</button><button class="refresh-button" id="refresh-article" type="button" disabled>Cập nhật bài viết</button><button class="delete-button" id="delete-article" type="button" disabled>Xóa bài viết</button></nav>
     </header>
     <p id="refresh-status" class="muted" role="status" aria-live="polite"></p>
     <ol id="progress-log" class="progress-log" aria-label="Nhật ký cập nhật bài viết" aria-live="polite" hidden></ol>
@@ -135,6 +137,7 @@
         const data = await response.json();
         currentId = data.id || '';
         document.querySelector('#refresh-article').disabled = !currentId;
+        document.querySelector('#delete-article').disabled = !currentId;
         document.querySelector('#generate-report').hidden = !currentId || data.analysis?.status !== 'needs_translation';
         conclusionElement.className = 'markdown';
         const report = data.analysis?.report || {};
@@ -148,6 +151,7 @@
       } catch (error) {
         currentId = '';
         document.querySelector('#refresh-article').disabled = true;
+        document.querySelector('#delete-article').disabled = true;
         document.querySelector('#generate-report').hidden = true;
         document.querySelector('#vietnamese-report').hidden = true;
         conclusionElement.className = 'markdown error';
@@ -218,8 +222,29 @@
         button.disabled = false;
       }
     }
+    async function deleteArticle() {
+      if (!currentId) return;
+      const title = document.querySelector('#title').textContent;
+      if (!confirm(`Xóa bài viết “${title}” khỏi danh sách và dashboard?`)) return;
+      const button = document.querySelector('#delete-article');
+      const status = document.querySelector('#refresh-status');
+      button.disabled = true;
+      status.className = 'muted';
+      status.textContent = 'Đang xóa bài viết...';
+      try {
+        const response = await fetch(reportApiPath(currentId), {method: 'DELETE'});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Không xóa được bài viết.');
+        window.location.href = '/articles';
+      } catch (error) {
+        status.className = 'error';
+        status.textContent = error.message;
+        button.disabled = false;
+      }
+    }
     document.querySelector('#refresh-article').addEventListener('click', refreshArticle);
     document.querySelector('#generate-report').addEventListener('click', generateVietnameseReport);
+    document.querySelector('#delete-article').addEventListener('click', deleteArticle);
     loadReport();
     loadDashboard();
   </script>

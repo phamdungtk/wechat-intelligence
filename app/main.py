@@ -197,6 +197,18 @@ def report_by_id(account: str, year: str, month: str, day: str, stamp: str):
     return {"id": _article_id(metadata_path), **_saved_report(metadata_path.parent)}
 
 
+@app.delete("/api/reports/{account}/{year}/{month}/{day}/{stamp}")
+def delete_report(account: str, year: str, month: str, day: str, stamp: str):
+    """Remove one article from reports and dashboard, retaining a server-side recovery copy."""
+    with refresh_lock:
+        directory = _saved_article_directory(account, year, month, day, stamp)
+        article_id = _article_id(directory / "metadata.json")
+        trash_root = BASE_DIR / "storage" / "trash"
+        trash_root.mkdir(parents=True, exist_ok=True)
+        directory.rename(trash_root / f"{datetime.now().strftime('%Y%m%d-%H%M%S%f')}-{uuid4().hex}")
+    return {"deleted": True, "id": article_id}
+
+
 @app.post("/api/reports/{account}/{year}/{month}/{day}/{stamp}/refresh")
 def refresh_report(account: str, year: str, month: str, day: str, stamp: str):
     return _refresh_report(account, year, month, day, stamp)
