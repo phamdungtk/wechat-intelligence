@@ -14,7 +14,7 @@ fi
 
 cat > /etc/systemd/system/wechat-intelligence-collector.service <<EOF
 [Unit]
-Description=Import WeChat Desktop article links from clipboard
+Description=Automatically sync WeChat Desktop articles
 Requires=docker.service
 After=docker.service wechat-intelligence.service
 

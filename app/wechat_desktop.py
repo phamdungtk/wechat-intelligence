@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import logging
+import os
 import re
 import subprocess
 import time
@@ -97,7 +99,7 @@ def saved_article_urls() -> set[str]:
     return {str(metadata.get("url") or "") for _, metadata, _ in _saved_articles()}
 
 
-def import_clipboard_article() -> dict | None:
+def import_clipboard_article(progress=None) -> dict | None:
     url = clipboard_article_url()
     if not url:
         return None
@@ -112,14 +114,14 @@ def import_clipboard_article() -> dict | None:
         from app.main import _translate_saved_article
 
         metadata_path, metadata, _ = saved
-        translated = _translate_saved_article(metadata_path.parent)
+        translated = _translate_saved_article(metadata_path.parent, progress)
         LOGGER.info("Article already saved; report status=%s", translated["analysis"]["status"])
         return {"id": "/".join(metadata_path.parent.relative_to(BASE_DIR / "storage" / "raw").parts),
                 "title": metadata.get("title", ""), "existing": True,
                 "report_status": translated["analysis"]["status"]}
     from app.main import _process_article_url
 
-    result = _process_article_url(url)
+    result = _process_article_url(url, progress)
     LOGGER.info("Imported desktop article id=%s", result.get("id", ""))
     return {"id": result.get("id", ""), "title": result.get("metadata", {}).get("title", "")}
 
@@ -128,7 +130,27 @@ def screen_text() -> str:
     return " ".join(row["text"] for row in read_screen())
 
 
-def fetch_latest_article() -> dict | None:
+@contextmanager
+def desktop_lock():
+    import fcntl
+
+    lock_path = BASE_DIR / "storage" / "wechat_desktop" / "automation.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError("WeChat đang được đồng bộ ở một tác vụ khác.") from exc
+        yield
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+
+def _fetch_latest_article() -> dict | None:
     """Open the newest article in WeChat Official Accounts and import its copied link."""
     state = screen_text()
     if "Official" not in state or "Accounts" not in state:
@@ -141,18 +163,14 @@ def fetch_latest_article() -> dict | None:
     if "榴莲" not in state and "莲" not in state:
         raise RuntimeError("Không thấy bài mới của tài khoản 榴莲产业网")
 
-    # The Official Accounts feed shows the newest message as its top article card.
     click(580, 230)
     time.sleep(8)
     state = screen_text()
     if not any(char.isdigit() for char in state):
         raise RuntimeError("Bài WeChat chưa mở được")
-
     try:
-        click(845, 54)  # article browser menu
+        click(845, 54)
         time.sleep(0.5)
-        if "CopyLink" not in screen_text().replace(" ", ""):
-            LOGGER.warning("Không đọc được nhãn CopyLink; thử vị trí menu đã xác nhận")
         click(646, 117)
         time.sleep(0.5)
         url = clipboard_article_url()
@@ -163,8 +181,65 @@ def fetch_latest_article() -> dict | None:
         LOGGER.info("Latest WeChat article result: %s", result or "already saved")
         return result
     finally:
-        # Return the desktop to the feed so the next scheduled run starts predictably.
         click(944, 54)
+
+
+def fetch_latest_article() -> dict | None:
+    with desktop_lock():
+        return _fetch_latest_article()
+
+
+def _open_today_archive(progress=None) -> None:
+    state = screen_text()
+    if "Official" not in state or "Accounts" not in state:
+        click(944, 54)
+        time.sleep(1)
+        state = screen_text()
+    if "Official" not in state or "Accounts" not in state:
+        raise RuntimeError("Không thấy trang Official Accounts trong WeChat")
+    if progress:
+        progress("Đang mở kho bài của tài khoản 榴莲产业网.")
+    click(475, 199)
+    time.sleep(2)
+    click(434, 350)  # Articles tab on the account profile.
+    time.sleep(1)
+    docker_exec("xdotool", "mousemove", "850", "590", "click", "--repeat", "4", "--delay", "100", "5")
+    time.sleep(0.8)
+
+
+def sync_today_articles(progress=None) -> dict:
+    """Import the article cards in today's Official Account archive group."""
+    with desktop_lock():
+        from datetime import date
+
+        today = date.today().isoformat()
+        items = []
+        for index, y in enumerate((285, 435), start=1):
+            if progress:
+                progress(f"Đang đọc bài {index} trong nhóm hôm nay ({today}).")
+            _open_today_archive(progress)
+            try:
+                click(500, y)
+                time.sleep(8)
+                state = screen_text()
+                if "榴莲" not in state and "莲" not in state:
+                    raise RuntimeError("Không mở được bài trong kho Official Accounts")
+                click(845, 54)
+                time.sleep(0.5)
+                click(646, 117)  # CopyLink
+                time.sleep(0.5)
+                url = clipboard_article_url()
+                if not url:
+                    raise RuntimeError("Không sao chép được link bài WeChat")
+                if progress:
+                    progress(f"Đã lấy link bài {index}; đang lưu bài gốc và tạo báo cáo tiếng Việt.")
+                result = import_clipboard_article(progress)
+                items.append(result or {"existing": True, "url": url})
+            finally:
+                click(944, 54)
+                time.sleep(0.5)
+        return {"date": today, "synced": len(items),
+                "imported": sum(not item.get("existing", False) for item in items), "items": items}
 
 
 def watch_clipboard(interval: float = 5.0, refresh_interval: float = 3600.0) -> None:
@@ -189,7 +264,7 @@ def watch_clipboard(interval: float = 5.0, refresh_interval: float = 3600.0) -> 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="WeChat Linux desktop bridge")
-    parser.add_argument("command", choices=["status", "clipboard", "import-clipboard", "fetch-latest", "watch",
+    parser.add_argument("command", choices=["status", "clipboard", "import-clipboard", "fetch-latest", "sync-today", "watch",
                                              "screenshot", "ocr", "click", "key", "paste"])
     parser.add_argument("--interval", type=float, default=5.0)
     parser.add_argument("--refresh-interval", type=float, default=3600.0)
@@ -208,6 +283,8 @@ def main() -> None:
         print(json.dumps(import_clipboard_article(), ensure_ascii=False))
     elif args.command == "fetch-latest":
         print(json.dumps(fetch_latest_article(), ensure_ascii=False))
+    elif args.command == "sync-today":
+        print(json.dumps(sync_today_articles(), ensure_ascii=False))
     elif args.command == "watch":
         watch_clipboard(max(1.0, args.interval), max(60.0, args.refresh_interval))
     elif args.command == "screenshot":

@@ -320,6 +320,16 @@ def article_job(job_id: str):
     return get_job(job_id)
 
 
+@app.post("/api/wechat/sync-today/jobs")
+def sync_wechat_today_job():
+    def work(progress: Progress):
+        from app.wechat_desktop import sync_today_articles
+
+        return sync_today_articles(progress)
+
+    return start_job("wechat_sync_today", work)
+
+
 @app.get("/api/preview/{account}/{year}/{month}/{day}/{stamp}", response_class=HTMLResponse)
 def article_preview(account: str, year: str, month: str, day: str, stamp: str):
     article_path = BASE_DIR / "storage" / "raw" / account / year / month / day / stamp / "article.html"

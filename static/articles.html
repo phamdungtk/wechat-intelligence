@@ -15,6 +15,10 @@
     .action { display: inline-block; background: #2563eb; color: white; padding: 12px 18px; border-radius: 10px; }
     button.refresh { margin-left: 14px; border: 1px solid #2563eb; border-radius: 9px; padding: 9px 13px; background: white; color: #2563eb; font: inherit; font-weight: 700; cursor: pointer; }
     button.refresh:disabled { opacity: .6; cursor: wait; }
+    .sync-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 16px 0 22px; }
+    .sync-tools button { border: 0; border-radius: 10px; padding: 12px 18px; background: #2563eb; color: white; font: inherit; font-weight: 700; cursor: pointer; }
+    .sync-tools button:disabled { opacity: .6; cursor: wait; }
+    .sync-tools .progress-log { flex-basis: 100%; }
     button.delete { margin-left: 8px; border: 1px solid #b42318; border-radius: 9px; padding: 9px 13px; background: white; color: #b42318; font: inherit; font-weight: 700; cursor: pointer; }
     button.delete:disabled { opacity: .6; cursor: wait; }
     input { width: 100%; box-sizing: border-box; padding: 14px; border: 1px solid #cbd5e1; border-radius: 10px; font: inherit; margin: 8px 0 18px; }
@@ -30,6 +34,11 @@
       <div><h1>Bài viết đã lưu</h1><p id="count">Đang tải danh sách...</p></div>
       <a class="action" href="/">+ Thêm bài viết</a>
     </header>
+    <section class="sync-tools" aria-label="Đồng bộ bài WeChat hôm nay">
+      <button id="sync-today" type="button">Đồng bộ bài hôm nay</button>
+      <span id="sync-status" role="status" aria-live="polite"></span>
+      <ol class="progress-log" id="sync-log" aria-label="Nhật ký đồng bộ" aria-live="polite" hidden></ol>
+    </section>
     <label for="search"><strong>Tìm bài viết</strong></label>
     <input id="search" type="search" placeholder="Nhập tiêu đề hoặc tên tài khoản">
     <div id="list" role="status" aria-live="polite"></div>
@@ -51,6 +60,24 @@
       }).join('') : '<p>Không tìm thấy bài viết phù hợp.</p>';
     }
     document.querySelector('#search').addEventListener('input', render);
+    document.querySelector('#sync-today').addEventListener('click', async () => {
+      const button = document.querySelector('#sync-today');
+      const status = document.querySelector('#sync-status');
+      button.disabled = true;
+      status.className = '';
+      status.textContent = 'Đang đồng bộ bài trong ngày từ WeChat...';
+      try {
+        const result = await runArticleJob('/api/wechat/sync-today/jobs', {method: 'POST'}, document.querySelector('#sync-log'));
+        status.textContent = `Đã kiểm tra ${result.synced} bài hôm nay, thêm ${result.imported} bài mới.`;
+        const response = await fetch('/api/reports?ts=' + Date.now(), {cache: 'no-store'});
+        if (response.ok) { articles = await response.json(); render(); }
+      } catch (error) {
+        status.className = 'error';
+        status.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
     document.querySelector('#list').addEventListener('click', async event => {
       const deleteButton = event.target.closest('button.delete');
       if (deleteButton) {
