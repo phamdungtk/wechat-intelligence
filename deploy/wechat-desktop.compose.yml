@@ -1,0 +1,15 @@
+services:
+  wechat-desktop:
+    image: lscr.io/linuxserver/weixin:latest
+    container_name: wechat-intelligence-desktop
+    environment:
+      PUID: "10100"
+      PGID: "10100"
+      TZ: Asia/Bangkok
+      UMASK: "077"
+    volumes:
+      - ../storage/wechat_desktop/config:/config
+    ports:
+      - "127.0.0.1:3436:3001"
+    shm_size: 1gb
+    restart: unless-stopped
