@@ -132,10 +132,26 @@ def _position_browser() -> bool:
     windows = _browser_windows()
     if not windows:
         return False
-    window_id = windows[-1]
+    # WeChat's main chat and its embedded article browser share the same title.
+    # The article browser is the larger window, so select it explicitly rather
+    # than relying on the order returned by xdotool.
+    window_sizes = []
+    for window_id in windows:
+        geometry = docker_exec("xdotool", "getwindowgeometry", "--shell", window_id, check=False).stdout
+        width = re.search(r"^WIDTH=(\d+)$", geometry, re.MULTILINE)
+        height = re.search(r"^HEIGHT=(\d+)$", geometry, re.MULTILINE)
+        if width and height:
+            window_sizes.append((int(width.group(1)) * int(height.group(1)), window_id))
+    window_id = max(window_sizes)[1] if window_sizes else windows[-1]
     docker_exec("xdotool", "windowmove", window_id, "51", "34", check=False)
     docker_exec("xdotool", "windowraise", window_id, check=False)
     return True
+
+
+def _close_article_tab() -> None:
+    if _position_browser():
+        docker_exec("xdotool", "key", "--clearmodifiers", "ctrl+w", check=False)
+        time.sleep(0.3)
 
 
 def keypress(key: str) -> None:
@@ -238,8 +254,7 @@ def _fetch_latest_article() -> dict | None:
         LOGGER.info("Latest WeChat article result: %s", result or "already saved")
         return result
     finally:
-        if _position_browser():
-            click(658, 54)
+        _close_article_tab()
 
 
 def fetch_latest_article() -> dict | None:
@@ -430,11 +445,7 @@ def sync_period_articles(group: str, key: str, progress=None, *, max_scrolls: in
                         finally:
                             # Each archive card opens a second browser tab. Closing it
                             # restores the archive and its scroll position.
-                            if _position_browser():
-                                # New articles open in a second tab. Close that
-                                # selected tab and keep the archive's scroll.
-                                click(658, 54)
-                            time.sleep(0.3)
+                            _close_article_tab()
                         identity = _canonical_url(url)
                         if identity in seen_urls:
                             continue
