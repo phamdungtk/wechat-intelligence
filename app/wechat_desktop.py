@@ -65,6 +65,11 @@ def desktop_login_state() -> str:
         return "login_required"
     if "qr" in text or "scan" in text or "扫描" in text or "二维码" in text:
         return "scan_qr"
+    if len(rows) > 12:
+        # An authenticated chat/article page may not contain the account name
+        # or English navigation labels. Login/splash screens are handled above
+        # and contain only a few OCR rows.
+        return "logged_in"
     return "starting"
 
 
