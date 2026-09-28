@@ -297,8 +297,10 @@ def _open_account_archive(progress=None) -> None:
     rows = read_screen()
     text = " ".join(row["text"] for row in rows)
     has_article_date = any(re.match(r"^20\d{2}[-/]\d{2}[-/]\d{2}$", row["text"]) for row in rows)
-    profile_open = "榴莲" in text and (has_article_date or any(
-        marker in text for marker in ("文章", "已关注", "关注", "私信", "View History")
+    account_identified = any(marker in text.lower()
+                             for marker in ("榴莲", "产业网", "durianindustry"))
+    profile_open = account_identified and (has_article_date or any(
+        marker in text for marker in ("文章", "已关注", "关注", "私信", "View History", "Friend Profile")
     ))
     if not profile_open:
         # Open Contacts, then select the account from the followed Official
@@ -366,29 +368,37 @@ def _open_account_archive(progress=None) -> None:
                 f"Đã chọn tài khoản nhưng chưa mở được hồ sơ 榴莲产业网 "
                 f"(màn hình: {profile_text[:240]})"
             )
-    article_tab = next((row for row in rows if "文章" in row["text"] and 300 <= row["x"] <= 600
-                        and 60 <= row["y"] <= 500), None)
-    if article_tab is None and "榴莲" in " ".join(row["text"] for row in rows):
-        # A previously opened native Friend Profile needs one extra step before
-        # the embedded history page exposes its tabs.
-        history_button = next((row for row in rows
-                               if "history" in row["text"].lower()
-                               or "历史" in row["text"]), None)
-        if history_button:
-            click(history_button["x"] + history_button["width"] // 2,
-                  history_button["y"] + history_button["height"] // 2)
-        else:
-            # The profile is verified by its account name; this is the fixed
-            # View History button in the 1024x768 native profile layout.
-            click(664, 390)
-        time.sleep(2)
-        rows = read_screen()
+    def find_article_tab(items):
+        return next((row for row in items if "文章" in row["text"] and 300 <= row["x"] <= 600
+                     and 60 <= row["y"] <= 500), None)
 
-    article_tab = next((row for row in rows if "文章" in row["text"] and 300 <= row["x"] <= 600
-                        and 60 <= row["y"] <= 500), None)
-    if article_tab is None and not profile_open:
+    article_tab = find_article_tab(rows)
+    if article_tab is None and account_identified:
+        current_text = " ".join(row["text"] for row in rows)
+        # A native Friend Profile needs one extra step before the embedded
+        # history page exposes its tabs.
+        if "Friend Profile" in current_text:
+            history_button = next((row for row in rows
+                                   if "history" in row["text"].lower()
+                                   or "历史" in row["text"]), None)
+            if history_button:
+                click(history_button["x"] + history_button["width"] // 2,
+                      history_button["y"] + history_button["height"] // 2)
+            else:
+                click(664, 390)
+
+        # WeChat loads the account history in a web view; its tab strip can take
+        # several seconds to appear after View History is opened.
+        for _ in range(20):
+            time.sleep(1)
+            rows = read_screen()
+            article_tab = find_article_tab(rows)
+            if article_tab:
+                break
+
+    if article_tab is None:
         state = " ".join(row["text"] for row in rows)
-        raise RuntimeError(f"Đã mở WeChat nhưng không thấy thẻ bài viết của Official Account (màn hình: {state[:240]})")
+        raise RuntimeError(f"Đã mở hồ sơ 榴莲产业网 nhưng chưa thấy tab bài viết (màn hình: {state[:240]})")
     if article_tab:
         click(article_tab["x"] + max(5, article_tab["width"] // 2), article_tab["y"] + 7)
         time.sleep(1)
