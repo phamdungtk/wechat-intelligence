@@ -68,7 +68,9 @@
       status.textContent = 'Đang đồng bộ bài trong ngày từ WeChat...';
       try {
         const result = await runArticleJob('/api/wechat/sync-today/jobs', {method: 'POST'}, document.querySelector('#sync-log'));
-        status.textContent = `Đã kiểm tra ${result.synced} bài hôm nay, thêm ${result.imported} bài mới.`;
+        status.textContent = `Đã kiểm tra ${result.synced} bài hôm nay, thêm ${result.imported} bài mới, bỏ qua ${result.skipped_existing} bài đã có.` +
+          (result.complete ? '' : ' Có lỗi hoặc chưa quét hết kho; xem nhật ký và thử lại.');
+        if (!result.complete) status.className = 'error';
         const response = await fetch('/api/reports?ts=' + Date.now(), {cache: 'no-store'});
         if (response.ok) { articles = await response.json(); render(); }
       } catch (error) {

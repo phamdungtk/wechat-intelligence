@@ -54,11 +54,18 @@ def start_job(operation: str, work) -> dict:
         try:
             result = work(lambda message: _event(job, message))
             analysis = result.get("analysis", {}) if isinstance(result, dict) else {}
-            complete_message = (
-                "Đã lưu bài gốc; báo cáo tiếng Việt chưa được tạo."
-                if analysis.get("status") == "needs_translation"
-                else "Hoàn tất. Bài viết và báo cáo đã được lưu."
-            )
+            if operation in ("sync_period", "wechat_sync_today") and isinstance(result, dict):
+                complete_message = (
+                    "Đã quét xong kho bài WeChat."
+                    if result.get("complete") else
+                    "Đã lưu các bài đọc được, nhưng kho bài chưa được quét đầy đủ."
+                )
+            else:
+                complete_message = (
+                    "Đã lưu bài gốc; báo cáo tiếng Việt chưa được tạo."
+                    if analysis.get("status") == "needs_translation"
+                    else "Hoàn tất. Bài viết và báo cáo đã được lưu."
+                )
             _event(job, complete_message)
             with lock:
                 job["result"] = result

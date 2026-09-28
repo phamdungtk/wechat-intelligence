@@ -21,6 +21,8 @@
     .controls { align-items: end; margin-bottom: 20px; }
     label { display: grid; gap: 6px; font-weight: 700; }
     select { min-width: 170px; padding: 11px 12px; border: 1px solid #cbd5e1; border-radius: 9px; background: white; color: inherit; font: inherit; }
+    .sync-button { padding: 12px 16px; border: 0; border-radius: 9px; background: #2563eb; color: white; font: inherit; font-weight: 700; cursor: pointer; }
+    .sync-button:disabled { opacity: .6; cursor: wait; }
     .card { background: white; border: 1px solid #e1e7f0; border-radius: 16px; padding: clamp(20px, 4vw, 32px); margin-bottom: 18px; box-shadow: 0 8px 25px #1720330d; }
     .stat-grid { margin: 20px 0; }
     .stat { flex: 1 1 170px; background: #f3f6fb; border-radius: 12px; padding: 16px; }
@@ -56,7 +58,10 @@
       <label>Kỳ báo cáo
         <select id="period"></select>
       </label>
+      <button id="sync-period" class="sync-button" type="button">Lấy bài tháng đã chọn</button>
     </div>
+    <p id="sync-status" role="status" aria-live="polite"></p>
+    <ol id="sync-log" class="progress-log" aria-label="Nhật ký lấy bài theo kỳ" hidden></ol>
     <p id="status" role="status" aria-live="polite"></p>
     <div id="report" hidden>
       <section class="card" id="summary">
@@ -87,6 +92,22 @@
     const reportLink = id => '/report?id=' + encodeURIComponent(id);
     let periods = {month: [], quarter: []};
     let overviewRequest = 0;
+
+    function withRecentPeriods(available) {
+      const now = new Date();
+      const months = [...(available.month || [])];
+      const quarters = [...(available.quarter || [])];
+      for (let i = 0; i < 36; i++) {
+        const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        months.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
+      }
+      const currentQuarterIndex = now.getFullYear() * 4 + Math.floor(now.getMonth() / 3);
+      for (let i = 0; i < 12; i++) {
+        const index = currentQuarterIndex - i;
+        quarters.push(`${Math.floor(index / 4)}-Q${index % 4 + 1}`);
+      }
+      return {month: [...new Set(months)].sort().reverse(), quarter: [...new Set(quarters)].sort().reverse()};
+    }
 
     function renderVehicleTable(rows) {
       if (!rows.length) return '<p>Chưa có ngày nào có số liệu container được xác nhận trong kỳ.</p>';
@@ -192,8 +213,34 @@
       const select = document.querySelector('#period');
       select.innerHTML = (periods[group] || []).map(key => `<option value="${key}">${periodLabel(group, key)}</option>`).join('');
       if (preferred && periods[group].includes(preferred)) select.value = preferred;
+      document.querySelector('#sync-period').textContent = group === 'month' ? 'Lấy bài tháng đã chọn' : 'Lấy bài quý đã chọn';
       loadOverview();
     }
+
+    document.querySelector('#sync-period').addEventListener('click', async () => {
+      const group = document.querySelector('#group').value;
+      const key = document.querySelector('#period').value;
+      if (!key) return;
+      const button = document.querySelector('#sync-period');
+      const status = document.querySelector('#sync-status');
+      button.disabled = true;
+      status.className = 'muted';
+      status.textContent = `Đang tìm và tải bài WeChat của ${periodLabel(group, key).toLowerCase()}...`;
+      try {
+        const result = await runArticleJob(`/api/wechat/sync-period/${group}/${key}/jobs`, {method: 'POST'}, document.querySelector('#sync-log'));
+        status.className = result.complete ? 'muted' : 'error';
+        status.textContent = `Đã kiểm tra ${n(result.scanned)} link, thêm ${n(result.imported)} bài, bỏ qua ${n(result.skipped_existing)} bài đã có.` +
+          (result.complete ? '' : ` Còn ${n(result.failures.length)} lỗi hoặc chưa quét hết kho; xem nhật ký và thử lại.`);
+        const response = await fetch('/api/period-overviews/periods?ts=' + Date.now(), {cache: 'no-store'});
+        if (response.ok) periods = withRecentPeriods(await response.json());
+        loadOverview();
+      } catch (error) {
+        status.className = 'error';
+        status.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
 
     document.querySelector('#group').addEventListener('change', () => fillPeriods());
     document.querySelector('#period').addEventListener('change', loadOverview);
@@ -202,7 +249,7 @@
       try {
         const response = await fetch('/api/period-overviews/periods?ts=' + Date.now(), {cache: 'no-store'});
         if (!response.ok) throw new Error('Không tải được danh sách kỳ báo cáo.');
-        periods = await response.json();
+        periods = withRecentPeriods(await response.json());
         const params = new URLSearchParams(location.search);
         if (params.get('group') === 'quarter') document.querySelector('#group').value = 'quarter';
         fillPeriods(params.get('period'));

@@ -90,6 +90,8 @@ Nút **Xóa bài viết** ở danh sách và trang chi tiết yêu cầu xác nh
 
 Trang **Tổng hợp tháng/quý** (`/overview`) gom các bài WeChat đã lưu theo ngày phát hành, hiển thị kết luận và báo cáo tiếng Việt của từng bài, rồi tạo nhận định chung bằng OpenAI API khi đã có key. Nhận định chung được lưu tạm và tự tạo lại khi kết luận nguồn thay đổi. Bài trùng URL chỉ tính một lần.
 
+Trên cùng trang, chọn tháng hoặc quý rồi bấm **Lấy bài tháng đã chọn** hoặc **Lấy bài quý đã chọn**. Ứng dụng cuộn kho bài của 榴莲产业网 trong WeChat Desktop, xác nhận link và ngày phát hành trước khi tải. Bài đã có cùng link được bỏ qua; tiến độ, số bài mới và các lỗi hiện ngay trên trang. Giữ WeChat Desktop đăng nhập trong lúc đồng bộ. Nút **Đồng bộ bài hôm nay** dùng cùng cơ chế để lấy đúng các bài phát hành trong ngày.
+
 Báo cáo xe tháng/quý cộng số container Việt Nam và Thái Lan theo **ngày số liệu** từ dashboard hải quan đường bộ. Mỗi ngày chỉ tính một bản ghi đã được dashboard chọn; báo cáo cho biết số ngày có dữ liệu và dẫn về bài gốc. Ngày thiếu dữ liệu không được tính là 0, nên tổng chỉ phản ánh các ngày đã ghi nhận, không phải ước tính cả tháng/quý.
 
 Khi tải hoặc cập nhật bài, trang hiển thị nhật ký từng bước và lỗi nếu có. Trên Ubuntu có thể xem chi tiết lỗi máy chủ bằng `sudo journalctl -u wechat-intelligence -f`.

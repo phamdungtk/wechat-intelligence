@@ -23,6 +23,7 @@ from app.downloader.downloader import download_article
 from app.reporting import article_report, daily_vehicle_counts
 from app.period_overview import (
     available_periods, build_period_overview, load_period_report, period_report_input, save_period_report,
+    valid_period,
 )
 from app.wechat_account import CAPTURE_LOG_PATH, WeChatAccountDownloader, capture_logger
 from app.wechat_history import latest_post
@@ -209,6 +210,19 @@ def period_overview_job(group: str, key: str):
     return start_job("period_overview", work)
 
 
+@app.post("/api/wechat/sync-period/{group}/{key}/jobs")
+def sync_period_job(group: str, key: str):
+    if not valid_period(group, key):
+        raise HTTPException(status_code=400, detail="Kỳ đồng bộ không hợp lệ")
+    def work(progress: Progress):
+        from app.wechat_desktop import sync_period_articles
+        try:
+            return sync_period_articles(group, key, progress)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return start_job("sync_period", work)
+
+
 @app.get("/api/latest-article")
 def latest_article():
     articles = _saved_articles()
@@ -367,8 +381,10 @@ def article_job(job_id: str):
 def sync_wechat_today_job():
     def work(progress: Progress):
         from app.wechat_desktop import sync_today_articles
-
-        return sync_today_articles(progress)
+        try:
+            return sync_today_articles(progress)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     return start_job("wechat_sync_today", work)
 
