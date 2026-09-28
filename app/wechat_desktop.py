@@ -46,7 +46,10 @@ def desktop_login_state() -> str:
     text = " ".join(row["text"] for row in rows).lower()
     if "official" in text and "accounts" in text:
         return "logged_in"
-    if "榴莲" in text and any(marker in text for marker in ("文章", "已关注", "私信")):
+    has_article_date = any(re.match(r"^20\d{2}[-/]\d{2}[-/]\d{2}$", row["text"]) for row in rows)
+    if "榴莲" in text and (has_article_date or any(
+        marker in text for marker in ("文章", "已关注", "私信")
+    )):
         # The account profile/article archive is also an authenticated WeChat
         # screen, even though it no longer displays the English chat label.
         return "logged_in"
