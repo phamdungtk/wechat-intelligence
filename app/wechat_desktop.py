@@ -41,8 +41,17 @@ def desktop_status() -> dict:
     return {"container": CONTAINER, "state": result.stdout.strip() if result.returncode == 0 else "not_installed"}
 
 
-def desktop_login_state() -> str:
-    rows = read_screen()
+def desktop_login_state(*, lock_held: bool = False) -> str:
+    if lock_held:
+        rows = read_screen()
+    else:
+        try:
+            with desktop_lock():
+                rows = read_screen()
+        except RuntimeError:
+            # OCR is expensive and reads the same desktop used by article
+            # collection. Do not let the UI's login poll compete with a sync.
+            return "busy"
     text = " ".join(row["text"] for row in rows).lower()
     if "official" in text and "accounts" in text:
         return "logged_in"
@@ -75,14 +84,14 @@ def desktop_login_state() -> str:
 
 def prepare_desktop_login() -> str:
     with desktop_lock():
-        state = desktop_login_state()
+        state = desktop_login_state(lock_held=True)
         if state == "starting":
             subprocess.run(["docker", "restart", CONTAINER], check=True, capture_output=True,
                            text=True, timeout=60)
             for _ in range(15):
                 time.sleep(2)
                 try:
-                    state = desktop_login_state()
+                    state = desktop_login_state(lock_held=True)
                 except subprocess.SubprocessError:
                     continue
                 if state != "starting":
@@ -90,7 +99,7 @@ def prepare_desktop_login() -> str:
         if state == "login_required":
             click(512, 475)
             time.sleep(2)
-            state = desktop_login_state()
+            state = desktop_login_state(lock_held=True)
         return state
 
 

@@ -240,11 +240,15 @@ def prepare_wechat_desktop_login():
 
 @app.get("/api/wechat/desktop/login/screen.png")
 def wechat_desktop_login_screen():
-    from app.wechat_desktop import desktop_login_state, screenshot
-    state = desktop_login_state()
-    if state == "logged_in":
-        raise HTTPException(status_code=409, detail="WeChat đã đăng nhập.")
-    path = screenshot(BASE_DIR / "storage" / "wechat_desktop" / "login-screen.png")
+    from app.wechat_desktop import desktop_login_state, desktop_lock, screenshot
+    try:
+        with desktop_lock():
+            state = desktop_login_state(lock_held=True)
+            if state == "logged_in":
+                raise HTTPException(status_code=409, detail="WeChat đã đăng nhập.")
+            path = screenshot(BASE_DIR / "storage" / "wechat_desktop" / "login-screen.png")
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return Response(
         content=path.read_bytes(), media_type="image/png",
         headers={"Cache-Control": "no-store"},

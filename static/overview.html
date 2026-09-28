@@ -254,6 +254,7 @@
     const loginStatus = document.querySelector('#wechat-login-status');
     const loginScreen = document.querySelector('#wechat-login-screen');
     const loginHelp = document.querySelector('#wechat-login-help');
+    const loginButton = document.querySelector('#wechat-login-button');
     let loginTimer;
     let loginImageState = '';
 
@@ -262,6 +263,18 @@
         const response = await fetch('/api/wechat/desktop/login/state?ts=' + Date.now(), {cache: 'no-store'});
         if (!response.ok) throw new Error((await response.json()).detail || 'Không kiểm tra được trạng thái WeChat.');
         const {state} = await response.json();
+        if (state === 'busy') {
+          loginCard.hidden = false;
+          loginStatus.textContent = 'WeChat đang được dùng để quét bài; sẽ kiểm tra lại sau.';
+          loginScreen.hidden = true;
+          loginScreen.removeAttribute('src');
+          loginHelp.hidden = true;
+          loginButton.hidden = true;
+          loginImageState = '';
+          loginTimer = setTimeout(refreshWechatLogin, 5000);
+          return;
+        }
+        loginButton.hidden = false;
         if (state === 'logged_in') {
           loginCard.hidden = true;
           loginScreen.hidden = true;
@@ -293,7 +306,7 @@
     }
 
     document.querySelector('#wechat-login-button').addEventListener('click', async () => {
-      const button = document.querySelector('#wechat-login-button');
+      const button = loginButton;
       button.disabled = true;
       loginStatus.textContent = 'Đang khởi động màn hình đăng nhập WeChat...';
       try {
