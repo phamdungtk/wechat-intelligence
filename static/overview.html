@@ -119,10 +119,15 @@
       const stats = [
         ['Việt Nam', vehicles.vietnam], ['Thái Lan', vehicles.thailand],
         ['Tổng ghi nhận', vehicles.total], ['Ngày có dữ liệu', vehicles.days_with_data],
+        ['Bình quân/ngày có dữ liệu', vehicles.average_per_recorded_day],
       ];
-      document.querySelector('#vehicle-stats').innerHTML = stats.map(([name, value]) => `<div class="stat">${name}<strong>${n(value)}</strong></div>`).join('');
+      document.querySelector('#vehicle-stats').innerHTML = stats.map(([name, value]) => `<div class="stat">${name}<strong>${value == null ? '—' : n(value)}</strong></div>`).join('') +
+        (vehicles.highest_day ? `<div class="stat">Ngày cao nhất<strong>${n(vehicles.highest_day.total)}</strong><span class="muted">${escapeHtml(vehicles.highest_day.date)}</span></div>` : '');
       const monthly = document.querySelector('#monthly-breakdown');
-      monthly.innerHTML = data.group === 'quarter' && data.months.length ? '<h3>Theo từng tháng trong quý</h3><div class="table-wrap"><table><thead><tr><th>Tháng</th><th class="number">Bài viết</th><th class="number">Ngày có dữ liệu</th><th class="number">Việt Nam</th><th class="number">Thái Lan</th><th class="number">Tổng</th></tr></thead><tbody>' + data.months.map(item => `<tr><td>${escapeHtml(item.month)}</td><td class="number">${n(item.article_count)}</td><td class="number">${n(item.vehicles.days_with_data)}</td><td class="number">${n(item.vehicles.vietnam)}</td><td class="number">${n(item.vehicles.thailand)}</td><td class="number">${n(item.vehicles.total)}</td></tr>`).join('') + '</tbody></table></div>' : '';
+      monthly.innerHTML = data.group === 'quarter' && data.months.length ? '<h3>Theo từng tháng trong quý</h3><div class="table-wrap"><table><thead><tr><th>Tháng</th><th class="number">Bài viết</th><th class="number">Ngày có dữ liệu</th><th class="number">Việt Nam</th><th class="number">Thái Lan</th><th class="number">Tổng</th></tr></thead><tbody>' + data.months.map(item => {
+        const count = field => item.vehicles.days_with_data ? n(item.vehicles[field]) : '—';
+        return `<tr><td>${escapeHtml(item.month)}</td><td class="number">${n(item.article_count)}</td><td class="number">${n(item.vehicles.days_with_data)}</td><td class="number">${count('vietnam')}</td><td class="number">${count('thailand')}</td><td class="number">${count('total')}</td></tr>`;
+      }).join('') + '</tbody></table></div>' : '';
       document.querySelector('#daily-table').innerHTML = renderVehicleTable(data.daily);
       document.querySelector('#article-count').textContent = `${n(data.article_count)} bài viết`;
       document.querySelector('#articles').innerHTML = data.articles.length ? data.articles.map(item => {

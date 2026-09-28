@@ -117,6 +117,9 @@ def build_period_overview(
     rows.sort(key=lambda row: row["date"], reverse=True)
     subgroups = defaultdict(lambda: {"articles": 0, "vehicle_rows": []})
     if group == "quarter":
+        first_month = (int(key[-1]) - 1) * 3 + 1
+        for month in range(first_month, first_month + 3):
+            subgroups[f"{key[:4]}-{month:02d}"]
         for article in articles:
             subgroups[article["date"][:7]]["articles"] += 1
         for row in rows:
