@@ -152,16 +152,22 @@ def _position_browser() -> bool:
     if not windows:
         return False
     # WeChat's main chat and its embedded article browser share the same title.
-    # The article browser is the larger window, so select it explicitly rather
-    # than relying on the order returned by xdotool.
+    # The article browser is an offset popup; prefer it over the main window,
+    # which can occupy the full display.
     window_sizes = []
     for window_id in windows:
         geometry = docker_exec("xdotool", "getwindowgeometry", "--shell", window_id, check=False).stdout
+        x = re.search(r"^X=(-?\d+)$", geometry, re.MULTILINE)
+        y = re.search(r"^Y=(-?\d+)$", geometry, re.MULTILINE)
         width = re.search(r"^WIDTH=(\d+)$", geometry, re.MULTILINE)
         height = re.search(r"^HEIGHT=(\d+)$", geometry, re.MULTILINE)
-        if width and height:
-            window_sizes.append((int(width.group(1)) * int(height.group(1)), window_id))
-    window_id = max(window_sizes)[1] if window_sizes else windows[-1]
+        if x and y and width and height:
+            area = int(width.group(1)) * int(height.group(1))
+            # The embedded article browser is an offset popup. The main WeChat
+            # shell can fill the whole display and must not win by area.
+            popup = int(x.group(1)) > 0 or int(y.group(1)) > 0
+            window_sizes.append((popup, area, window_id))
+    window_id = max(window_sizes)[2] if window_sizes else windows[-1]
     docker_exec("xdotool", "windowmove", window_id, "51", "34", check=False)
     docker_exec("xdotool", "windowraise", window_id, check=False)
     docker_exec("xdotool", "windowactivate", "--sync", window_id, check=False)
@@ -292,24 +298,67 @@ def _open_account_archive(progress=None) -> None:
     text = " ".join(row["text"] for row in rows)
     has_article_date = any(re.match(r"^20\d{2}[-/]\d{2}[-/]\d{2}$", row["text"]) for row in rows)
     profile_open = "榴莲" in text and (has_article_date or any(
-        marker in text for marker in ("文章", "已关注", "关注", "私信")
+        marker in text for marker in ("文章", "已关注", "关注", "私信", "View History")
     ))
     if not profile_open:
-        # If WeChat is on another chat, select the Official Accounts conversation
-        # from the left-hand list first. OCR puts its label near x=170..285.
-        official_rows = [row for row in rows if row["text"].lower() in {"official", "accounts"}
-                         and 100 <= row["x"] <= 340 and 150 <= row["y"] <= 700]
-        if official_rows:
-            label_y = round(sum(row["y"] for row in official_rows) / len(official_rows))
-            click(220, label_y + 5)
-            time.sleep(2)
-        else:
-            state = " ".join(row["text"] for row in rows)
-            if "Official" not in state or "Accounts" not in state:
-                raise RuntimeError(f"Không thấy Official Accounts trong WeChat (màn hình: {state[:240]})")
+        # Open Contacts, then select the account from the followed Official
+        # Accounts list. The “Official Accounts” chat is only a Top Stories
+        # feed and can contain unrelated publishers.
+        click(31, 164)
+        time.sleep(0.5)
+        rows = read_screen()
 
-        # Open the account profile from its latest Official Accounts post.
-        click(445, 164)
+        def account_row(items):
+            return next((row for row in items
+                         if ("榴莲" in row["text"] or "产业网" in row["text"])
+                         and 70 <= row["x"] <= 300 and 150 <= row["y"] <= 700), None)
+
+        target = account_row(rows)
+        if target is None:
+            category_rows = [row for row in rows
+                             if ("official" in row["text"].lower()
+                                 or "accounts" in row["text"].lower())
+                             and 70 <= row["x"] <= 300 and 130 <= row["y"] <= 205]
+            if category_rows:
+                category_y = round(sum(row["y"] + row["height"] // 2
+                                       for row in category_rows) / len(category_rows))
+                click(165, category_y)
+                time.sleep(0.5)
+                rows = read_screen()
+                target = account_row(rows)
+
+        if target is None:
+            state = " ".join(row["text"] for row in rows)
+            raise RuntimeError(
+                f"Không tìm thấy 榴莲产业网 trong danh sách Official Accounts đã theo dõi "
+                f"(màn hình: {state[:240]})"
+            )
+
+        click(max(140, min(230, target["x"] + target["width"] // 2)),
+              target["y"] + max(5, target["height"] // 2))
+        time.sleep(1)
+        rows = read_screen()
+        profile_text = " ".join(row["text"] for row in rows)
+        if "榴莲" not in profile_text and "产业网" not in profile_text:
+            raise RuntimeError(
+                f"Đã chọn tài khoản nhưng chưa mở được hồ sơ 榴莲产业网 "
+                f"(màn hình: {profile_text[:240]})"
+            )
+    article_tab = next((row for row in rows if "文章" in row["text"] and 300 <= row["x"] <= 600
+                        and 60 <= row["y"] <= 500), None)
+    if article_tab is None and "榴莲" in " ".join(row["text"] for row in rows):
+        # A previously opened native Friend Profile needs one extra step before
+        # the embedded history page exposes its tabs.
+        history_button = next((row for row in rows
+                               if "history" in row["text"].lower()
+                               or "历史" in row["text"]), None)
+        if history_button:
+            click(history_button["x"] + history_button["width"] // 2,
+                  history_button["y"] + history_button["height"] // 2)
+        else:
+            # The profile is verified by its account name; this is the fixed
+            # View History button in the 1024x768 native profile layout.
+            click(664, 390)
         time.sleep(2)
         rows = read_screen()
 
