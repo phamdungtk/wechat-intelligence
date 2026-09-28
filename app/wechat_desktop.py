@@ -318,6 +318,14 @@ def _open_account_archive(progress=None) -> None:
 
     rows = read_screen()
     text = " ".join(row["text"] for row in rows)
+    compact_text = re.sub(r"\s+", "", text).lower()
+    if "copylink" in compact_text or "shareonmoments" in compact_text:
+        # A previous interrupted scan may have left an article detail tab in
+        # front. Return to the account archive before looking for its tabs.
+        _close_article_tab()
+        time.sleep(0.5)
+        rows = read_screen()
+        text = " ".join(row["text"] for row in rows)
     has_article_date = any(re.match(r"^20\d{2}[-/]\d{2}[-/]\d{2}$", row["text"]) for row in rows)
     account_identified = any(marker in text.lower()
                              for marker in ("榴莲", "产业网", "durianindustry"))
