@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import subprocess
+import threading
 import time
 from pathlib import Path
 from urllib.parse import urlparse
@@ -96,7 +97,7 @@ def clipboard_article_url() -> str | None:
 
 
 def screenshot(output: Path) -> Path:
-    remote = "/tmp/wechat-intelligence-screen.png"
+    remote = _screen_remote_path()
     docker_exec("scrot", "-z", "-o", remote)
     output.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(["docker", "cp", f"{CONTAINER}:{remote}", str(output)], check=True, timeout=30)
@@ -104,7 +105,7 @@ def screenshot(output: Path) -> Path:
 
 
 def read_screen() -> list[dict]:
-    remote = "/tmp/wechat-intelligence-screen.png"
+    remote = _screen_remote_path()
     docker_exec("scrot", "-z", "-o", remote)
     result = docker_exec("tesseract", remote, "stdout", "-l", "chi_sim+eng", "--psm", "11", "tsv")
     rows = []
@@ -114,6 +115,12 @@ def read_screen() -> list[dict]:
             rows.append({"text": cells[-1], "x": int(cells[6]), "y": int(cells[7]),
                          "width": int(cells[8]), "height": int(cells[9])})
     return rows
+
+
+def _screen_remote_path() -> str:
+    # Login polling and archive sync can capture the desktop concurrently.
+    # Give each worker thread its own screenshot path to avoid truncated PNGs.
+    return f"/tmp/wechat-intelligence-screen-{os.getpid()}-{threading.get_ident()}.png"
 
 
 def click(x: int, y: int) -> None:
