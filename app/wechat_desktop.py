@@ -360,7 +360,8 @@ def _open_account_archive(progress=None) -> None:
         time.sleep(1)
         rows = read_screen()
         profile_text = " ".join(row["text"] for row in rows)
-        if "榴莲" not in profile_text and "产业网" not in profile_text:
+        if not any(marker in profile_text.lower()
+                   for marker in ("榴莲", "产业网", "durianindustry")):
             raise RuntimeError(
                 f"Đã chọn tài khoản nhưng chưa mở được hồ sơ 榴莲产业网 "
                 f"(màn hình: {profile_text[:240]})"
