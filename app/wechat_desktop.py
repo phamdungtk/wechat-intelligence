@@ -276,7 +276,7 @@ def _open_account_archive(progress=None) -> None:
         rows = read_screen()
 
     article_tab = next((row for row in rows if "文章" in row["text"] and 300 <= row["x"] <= 600
-                        and 300 <= row["y"] <= 450), None)
+                        and 180 <= row["y"] <= 500), None)
     if article_tab is None:
         state = " ".join(row["text"] for row in rows)
         raise RuntimeError(f"Đã mở WeChat nhưng không thấy thẻ bài viết của Official Account (màn hình: {state[:240]})")
@@ -312,8 +312,10 @@ def _archive_card_groups(image) -> list[dict]:
             end = y - 1
             height = end - start + 1
             extras = round((height - 202) / 96)
-            if (start > 155 and end < 697 and 0 <= extras <= 8
-                    and abs(height - (202 + extras * 96)) <= 24):
+            short_card = 80 <= height <= 130
+            standard_card = (0 <= extras <= 8
+                             and abs(height - (202 + extras * 96)) <= 24)
+            if start > 155 and end < 697 and (short_card or standard_card):
                 crop = image.crop((320, start, 705, end + 1))
                 # Opening a card increments its read counter. Exclude those
                 # counters so the same card keeps one identity while scrolling.
@@ -322,7 +324,8 @@ def _archive_card_groups(image) -> list[dict]:
                     top = 263 + 96 * extra_index
                     crop.paste((255, 255, 255), (0, top, 170, min(height, top + 30)))
                 signature = hashlib.sha256(crop.tobytes()).hexdigest()
-                positions = [start + 115] + [start + 202 + 48 + 96 * i for i in range(extras)]
+                positions = ([start + height // 2] if short_card else
+                             [start + 115] + [start + 202 + 48 + 96 * i for i in range(extras)])
                 groups.append({"signature": signature, "positions": positions})
             start = None
     return groups
