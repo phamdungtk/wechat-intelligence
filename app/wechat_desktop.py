@@ -313,12 +313,29 @@ def _open_account_archive(progress=None) -> None:
                          if ("榴莲" in row["text"] or "产业网" in row["text"])
                          and 70 <= row["x"] <= 300 and 150 <= row["y"] <= 700), None)
 
+        def followed_account_y(items):
+            category = next((row for row in items
+                             if "official" in row["text"].lower()
+                             and "accounts" in row["text"].lower()
+                             and 70 <= row["x"] <= 300 and 70 <= row["y"] <= 205), None)
+            if category is None:
+                return None
+            # The followed list contains one account, sorted below the “L”
+            # heading (榴莲, pinyin Liu). Tesseract often misreads its small
+            # Chinese label, so use the list structure as a fallback.
+            letter = next((row for row in items
+                           if row["text"].strip().lower() == "l"
+                           and 85 <= row["x"] <= 125
+                           and category["y"] < row["y"] <= category["y"] + 55), None)
+            return letter["y"] + 37 if letter else None
+
         target = account_row(rows)
-        if target is None:
+        target_y = followed_account_y(rows)
+        if target is None and target_y is None:
             category_rows = [row for row in rows
-                             if ("official" in row["text"].lower()
-                                 or "accounts" in row["text"].lower())
-                             and 70 <= row["x"] <= 300 and 130 <= row["y"] <= 205]
+                             if "official" in row["text"].lower()
+                             and "accounts" in row["text"].lower()
+                             and 70 <= row["x"] <= 300 and 70 <= row["y"] <= 205]
             if category_rows:
                 category_y = round(sum(row["y"] + row["height"] // 2
                                        for row in category_rows) / len(category_rows))
@@ -326,16 +343,20 @@ def _open_account_archive(progress=None) -> None:
                 time.sleep(0.5)
                 rows = read_screen()
                 target = account_row(rows)
+                target_y = followed_account_y(rows)
 
-        if target is None:
+        if target is None and target_y is None:
             state = " ".join(row["text"] for row in rows)
             raise RuntimeError(
                 f"Không tìm thấy 榴莲产业网 trong danh sách Official Accounts đã theo dõi "
                 f"(màn hình: {state[:240]})"
             )
 
-        click(max(140, min(230, target["x"] + target["width"] // 2)),
-              target["y"] + max(5, target["height"] // 2))
+        if target:
+            click(max(140, min(230, target["x"] + target["width"] // 2)),
+                  target["y"] + max(5, target["height"] // 2))
+        else:
+            click(170, target_y)
         time.sleep(1)
         rows = read_screen()
         profile_text = " ".join(row["text"] for row in rows)
