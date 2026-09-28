@@ -290,9 +290,10 @@ def _open_account_archive(progress=None) -> None:
 
     rows = read_screen()
     text = " ".join(row["text"] for row in rows)
-    profile_open = any("文章" in row["text"] and row["x"] > 300 for row in rows) and any(
-        marker in text for marker in ("已关注", "关注", "私信", "榴莲")
-    )
+    has_article_date = any(re.match(r"^20\d{2}[-/]\d{2}[-/]\d{2}$", row["text"]) for row in rows)
+    profile_open = "榴莲" in text and (has_article_date or any(
+        marker in text for marker in ("文章", "已关注", "关注", "私信")
+    ))
     if not profile_open:
         # If WeChat is on another chat, select the Official Accounts conversation
         # from the left-hand list first. OCR puts its label near x=170..285.
@@ -314,11 +315,12 @@ def _open_account_archive(progress=None) -> None:
 
     article_tab = next((row for row in rows if "文章" in row["text"] and 300 <= row["x"] <= 600
                         and 60 <= row["y"] <= 500), None)
-    if article_tab is None:
+    if article_tab is None and not profile_open:
         state = " ".join(row["text"] for row in rows)
         raise RuntimeError(f"Đã mở WeChat nhưng không thấy thẻ bài viết của Official Account (màn hình: {state[:240]})")
-    click(article_tab["x"] + max(5, article_tab["width"] // 2), article_tab["y"] + 7)
-    time.sleep(1)
+    if article_tab:
+        click(article_tab["x"] + max(5, article_tab["width"] // 2), article_tab["y"] + 7)
+        time.sleep(1)
     _position_browser()
 
 
