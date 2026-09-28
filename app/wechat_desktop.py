@@ -145,11 +145,14 @@ def _position_browser() -> bool:
     window_id = max(window_sizes)[1] if window_sizes else windows[-1]
     docker_exec("xdotool", "windowmove", window_id, "51", "34", check=False)
     docker_exec("xdotool", "windowraise", window_id, check=False)
+    docker_exec("xdotool", "windowactivate", "--sync", window_id, check=False)
     return True
 
 
 def _close_article_tab() -> None:
     if _position_browser():
+        # Focus the embedded browser before Ctrl+W; without activation the key
+        # can go to the main chat window and leave the article tab in front.
         docker_exec("xdotool", "key", "--clearmodifiers", "ctrl+w", check=False)
         time.sleep(0.3)
 
