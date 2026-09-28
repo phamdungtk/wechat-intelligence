@@ -52,6 +52,11 @@ def desktop_login_state(*, lock_held: bool = False) -> str:
             # OCR is expensive and reads the same desktop used by article
             # collection. Do not let the UI's login poll compete with a sync.
             return "busy"
+        except subprocess.CalledProcessError as exc:
+            if exc.returncode == 124:
+                # The container-side timeout stopped a slow OCR process.
+                return "busy"
+            raise
     text = " ".join(row["text"] for row in rows).lower()
     if "official" in text and "accounts" in text:
         return "logged_in"
@@ -128,7 +133,10 @@ def screenshot(output: Path) -> Path:
 def read_screen() -> list[dict]:
     remote = _screen_remote_path()
     docker_exec("scrot", "-z", "-o", remote)
-    result = docker_exec("tesseract", remote, "stdout", "-l", "chi_sim+eng", "--psm", "11", "tsv")
+    # Bound OCR inside the container. Timing out only the docker client leaves
+    # orphaned Tesseract processes running and can starve later scans.
+    result = docker_exec("timeout", "20s", "tesseract", remote, "stdout",
+                         "-l", "chi_sim+eng", "--psm", "11", "tsv")
     rows = []
     for line in result.stdout.splitlines()[1:]:
         cells = line.split("\t", 11)
