@@ -225,12 +225,8 @@ def sync_period_job(group: str, key: str):
 
 @app.get("/api/wechat/desktop/login/state")
 def wechat_desktop_login_state():
-    from app.wechat_desktop import desktop_login_state, desktop_lock
-    try:
-        with desktop_lock():
-            return {"state": desktop_login_state()}
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    from app.wechat_desktop import desktop_login_state
+    return {"state": desktop_login_state()}
 
 
 @app.post("/api/wechat/desktop/login/prepare")
@@ -244,19 +240,15 @@ def prepare_wechat_desktop_login():
 
 @app.get("/api/wechat/desktop/login/screen.png")
 def wechat_desktop_login_screen():
-    from app.wechat_desktop import desktop_login_state, desktop_lock, screenshot
-    try:
-        with desktop_lock():
-            state = desktop_login_state()
-            if state == "logged_in":
-                raise HTTPException(status_code=409, detail="WeChat đã đăng nhập.")
-            path = screenshot(BASE_DIR / "storage" / "wechat_desktop" / "login-screen.png")
-            return Response(
-                content=path.read_bytes(), media_type="image/png",
-                headers={"Cache-Control": "no-store"},
-            )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    from app.wechat_desktop import desktop_login_state, screenshot
+    state = desktop_login_state()
+    if state == "logged_in":
+        raise HTTPException(status_code=409, detail="WeChat đã đăng nhập.")
+    path = screenshot(BASE_DIR / "storage" / "wechat_desktop" / "login-screen.png")
+    return Response(
+        content=path.read_bytes(), media_type="image/png",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/api/latest-article")
