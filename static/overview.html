@@ -287,8 +287,11 @@
     document.querySelector('#wechat-login-button').addEventListener('click', async () => {
       const button = document.querySelector('#wechat-login-button');
       button.disabled = true;
+      loginStatus.textContent = 'Đang khởi động màn hình đăng nhập WeChat...';
       try {
-        await fetch('/api/wechat/desktop/login/prepare', {method: 'POST'});
+        const response = await fetch('/api/wechat/desktop/login/prepare', {method: 'POST'});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || 'Không mở được màn hình đăng nhập WeChat.');
         loginShown = true;
         loginScreen.hidden = false;
         loginHelp.hidden = false;

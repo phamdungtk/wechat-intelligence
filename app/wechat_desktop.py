@@ -63,6 +63,17 @@ def desktop_login_state() -> str:
 def prepare_desktop_login() -> str:
     with desktop_lock():
         state = desktop_login_state()
+        if state == "starting":
+            subprocess.run(["docker", "restart", CONTAINER], check=True, capture_output=True,
+                           text=True, timeout=60)
+            for _ in range(15):
+                time.sleep(2)
+                try:
+                    state = desktop_login_state()
+                except subprocess.SubprocessError:
+                    continue
+                if state != "starting":
+                    break
         if state == "login_required":
             click(512, 475)
             time.sleep(2)
