@@ -248,15 +248,39 @@ def fetch_latest_article() -> dict | None:
 
 
 def _open_account_archive(progress=None) -> None:
-    state = screen_text()
-    if "Official" not in state or "Accounts" not in state:
-        raise RuntimeError("Không thấy trang Official Accounts trong WeChat")
     if progress:
         progress("Đang mở kho bài của tài khoản 榴莲产业网.")
-    click(475, 199)
-    time.sleep(2)
-    _position_browser()
-    click(434, 350)  # Articles tab on the account profile.
+
+    rows = read_screen()
+    text = " ".join(row["text"] for row in rows)
+    profile_open = any("文章" in row["text"] and row["x"] > 300 for row in rows) and any(
+        marker in text for marker in ("已关注", "关注", "私信", "榴莲")
+    )
+    if not profile_open:
+        # If WeChat is on another chat, select the Official Accounts conversation
+        # from the left-hand list first. OCR puts its label near x=170..285.
+        official_rows = [row for row in rows if row["text"].lower() in {"official", "accounts"}
+                         and 100 <= row["x"] <= 340 and 150 <= row["y"] <= 700]
+        if official_rows:
+            label_y = round(sum(row["y"] for row in official_rows) / len(official_rows))
+            click(220, label_y + 5)
+            time.sleep(2)
+        else:
+            state = " ".join(row["text"] for row in rows)
+            if "Official" not in state or "Accounts" not in state:
+                raise RuntimeError(f"Không thấy Official Accounts trong WeChat (màn hình: {state[:240]})")
+
+        # Open the account profile from its latest Official Accounts post.
+        click(445, 164)
+        time.sleep(2)
+        rows = read_screen()
+
+    article_tab = next((row for row in rows if "文章" in row["text"] and 300 <= row["x"] <= 600
+                        and 300 <= row["y"] <= 450), None)
+    if article_tab is None:
+        state = " ".join(row["text"] for row in rows)
+        raise RuntimeError(f"Đã mở WeChat nhưng không thấy thẻ bài viết của Official Account (màn hình: {state[:240]})")
+    click(article_tab["x"] + max(5, article_tab["width"] // 2), article_tab["y"] + 7)
     time.sleep(1)
     _position_browser()
 
@@ -484,8 +508,7 @@ def sync_period_articles(group: str, key: str, progress=None, *, max_scrolls: in
             result["failures"].append("Đã đạt giới hạn cuộn kho bài trước khi hết kỳ.")
             return result
         finally:
-            # Leave WeChat on the account archive. Closing the whole window here
-            # can close the authenticated desktop session as well.
+            # Keep the authenticated WeChat window open on the archive screen.
             pass
 
 
