@@ -290,6 +290,11 @@ def fetch_latest_article() -> dict | None:
         return _fetch_latest_article()
 
 
+def _find_article_tab(items: list[dict]) -> dict | None:
+    return next((row for row in items if "文章" in row["text"] and 300 <= row["x"] <= 600
+                 and 60 <= row["y"] <= 500), None)
+
+
 def _open_account_archive(progress=None) -> None:
     if progress:
         progress("Đang mở kho bài của tài khoản 榴莲产业网.")
@@ -369,11 +374,7 @@ def _open_account_archive(progress=None) -> None:
                 f"(màn hình: {profile_text[:240]})"
             )
         account_identified = True
-    def find_article_tab(items):
-        return next((row for row in items if "文章" in row["text"] and 300 <= row["x"] <= 600
-                     and 60 <= row["y"] <= 500), None)
-
-    article_tab = find_article_tab(rows)
+    article_tab = _find_article_tab(rows)
     if article_tab is None and account_identified:
         current_text = " ".join(row["text"] for row in rows)
         # A native Friend Profile needs one extra step before the embedded
@@ -393,7 +394,7 @@ def _open_account_archive(progress=None) -> None:
         for _ in range(20):
             time.sleep(1)
             rows = read_screen()
-            article_tab = find_article_tab(rows)
+            article_tab = _find_article_tab(rows)
             if article_tab:
                 break
 
@@ -572,7 +573,7 @@ def sync_period_articles(group: str, key: str, progress=None, *, max_scrolls: in
                                 if progress:
                                     progress(message)
 
-                            if find_article_tab(read_screen()) is None:
+                            if _find_article_tab(read_screen()) is None:
                                 _open_account_archive(progress)
                                 resume_archive = True
                             if attempts < 2:
