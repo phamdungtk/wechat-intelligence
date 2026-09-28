@@ -103,7 +103,7 @@
       const vehicles = data.vehicles;
       document.querySelector('#period-facts').innerHTML = `<h2>Báo cáo tổng hợp ${escapeHtml(label)}</h2>` +
         `<p>Đã lưu <strong>${n(data.article_count)} bài viết</strong> trong kỳ. Số liệu hải quan có <strong>${n(vehicles.days_with_data)} ngày</strong>, ghi nhận <strong>${n(vehicles.total)} container</strong>: Việt Nam ${n(vehicles.vietnam)}, Thái Lan ${n(vehicles.thailand)}.</p>` +
-        '<p class="muted">Bài viết được xếp theo ngày phát hành. Mỗi kết luận bên dưới lấy từ báo cáo tiếng Việt của chính bài đó.</p>';
+        `<p class="muted">${data.article_count ? `Các bài đã lưu phát hành từ ${escapeHtml(data.article_first_date)} đến ${escapeHtml(data.article_last_date)}. ` : ''}Bài viết được xếp theo ngày phát hành. Mỗi kết luận bên dưới lấy từ báo cáo tiếng Việt của chính bài đó.</p>`;
       const aggregate = document.querySelector('#period-report');
       aggregate.className = '';
       if (data.period_report) {

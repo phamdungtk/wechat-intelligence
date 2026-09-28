@@ -125,6 +125,8 @@ def build_period_overview(
         "group": group,
         "key": key,
         "article_count": len(articles),
+        "article_first_date": articles[-1]["date"] if articles else None,
+        "article_last_date": articles[0]["date"] if articles else None,
         "accounts": dict(Counter(item["account_name"] for item in articles)),
         "articles": articles,
         "vehicles": _vehicle_totals(rows),
@@ -146,7 +148,12 @@ def period_report_input(overview: dict) -> str:
     for item in reversed(articles):
         text = (item["conclusion"] + "\n" + item["summary"]).strip()[:per_article]
         blocks.append(f"Ngày {item['date']} | {item['title']} | {item['account_name']}\n{text}")
-    return "\n\n".join(blocks)
+    coverage = (
+        f"Kỳ được chọn: {overview['key']}. Chỉ có {len(articles)} bài đã lưu, "
+        f"phát hành từ {articles[-1]['date']} đến {articles[0]['date']}. "
+        "Đây là phạm vi nguồn hiện có; các ngày khác trong kỳ chưa được xác nhận."
+    )
+    return coverage + "\n\n" + "\n\n".join(blocks)
 
 
 def load_period_report(storage_root: Path, overview: dict) -> dict | None:

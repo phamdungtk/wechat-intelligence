@@ -62,6 +62,7 @@ def generate_vietnamese_report(title: str, content: str, *, period: bool = False
             + (
                 "Đầu vào là kết luận và tóm tắt của nhiều bài WeChat trong một tháng hoặc quý. "
                 "Tổng hợp diễn biến chung, điểm thay đổi và rủi ro; khi các bài khác nhau thì nêu rõ ngày hoặc nguồn. "
+                "Phải ghi rõ khoảng ngày bài viết thực sự bao phủ; không mô tả vài ngày dữ liệu như đại diện cho cả tháng/quý. "
                 "Không gán số của một ngày cho cả kỳ. Trả về summary là báo cáo ngắn có tiêu đề phụ và gạch đầu dòng Markdown; "
                 "conclusion là kết luận chung 2-4 câu. "
                 if period else
