@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tổng hợp tháng và quý · WeChat Intelligence</title>
+  <style>
+    :root { font-family: Inter, system-ui, sans-serif; color: #172033; background: #f3f6fb; }
+    body { margin: 0; }
+    main { width: min(1100px, calc(100% - 32px)); margin: 32px auto 70px; }
+    header, .controls, .stat-grid, .row-head { display: flex; gap: 16px; flex-wrap: wrap; }
+    header { align-items: flex-start; justify-content: space-between; margin-bottom: 22px; }
+    h1 { margin: 0 0 8px; font-size: clamp(28px, 5vw, 40px); }
+    h2 { margin: 0 0 14px; font-size: 23px; }
+    h3 { margin: 24px 0 8px; font-size: 18px; }
+    p { line-height: 1.65; }
+    a { color: #2563eb; text-decoration: none; font-weight: 700; }
+    a:hover { text-decoration: underline; }
+    .muted { color: #64748b; }
+    .error { color: #b42318; }
+    .controls { align-items: end; margin-bottom: 20px; }
+    label { display: grid; gap: 6px; font-weight: 700; }
+    select { min-width: 170px; padding: 11px 12px; border: 1px solid #cbd5e1; border-radius: 9px; background: white; color: inherit; font: inherit; }
+    .card { background: white; border: 1px solid #e1e7f0; border-radius: 16px; padding: clamp(20px, 4vw, 32px); margin-bottom: 18px; box-shadow: 0 8px 25px #1720330d; }
+    .stat-grid { margin: 20px 0; }
+    .stat { flex: 1 1 170px; background: #f3f6fb; border-radius: 12px; padding: 16px; }
+    .stat strong { display: block; margin-top: 8px; font-size: 26px; }
+    .row-head { align-items: baseline; justify-content: space-between; }
+    .article { border-top: 1px solid #e1e7f0; padding: 18px 0 4px; }
+    .article:first-of-type { border-top: 0; }
+    .article h3 { margin-top: 0; }
+    .article .conclusion { white-space: pre-line; margin: 10px 0; }
+    .article details { margin: 12px 0; }
+    .article details div { white-space: pre-wrap; line-height: 1.65; margin-top: 10px; }
+    .report-text { white-space: pre-wrap; line-height: 1.7; }
+    .progress-log { padding-left: 24px; color: #475569; line-height: 1.7; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 650px; }
+    th, td { padding: 11px 12px; text-align: left; border-bottom: 1px solid #e1e7f0; vertical-align: top; }
+    th { background: #f7f9fc; }
+    .number { text-align: right; font-variant-numeric: tabular-nums; }
+    details { cursor: pointer; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f7f9fc; padding: 12px; border-radius: 8px; cursor: text; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div><h1>Tổng hợp bài viết và xe xuất khẩu</h1><p class="muted">Báo cáo theo tháng hoặc quý từ các bài WeChat đã lưu.</p></div>
+      <nav><a href="/articles">← Bài viết đã lưu</a> · <a href="/">Thêm bài viết</a></nav>
+    </header>
+    <div class="controls">
+      <label>Loại báo cáo
+        <select id="group"><option value="month">Theo tháng</option><option value="quarter">Theo quý</option></select>
+      </label>
+      <label>Kỳ báo cáo
+        <select id="period"></select>
+      </label>
+    </div>
+    <p id="status" role="status" aria-live="polite"></p>
+    <div id="report" hidden>
+      <section class="card" id="summary">
+        <div id="period-facts"></div>
+        <div id="period-report"></div>
+        <button id="regenerate" type="button" hidden>Tạo lại báo cáo tổng hợp</button>
+        <ol id="report-log" class="progress-log" aria-label="Nhật ký tạo báo cáo" hidden></ol>
+      </section>
+      <section class="card">
+        <h2>Xe xuất khẩu qua hải quan đường bộ Trung Quốc</h2>
+        <p class="muted" id="vehicle-note"></p>
+        <div class="stat-grid" id="vehicle-stats"></div>
+        <div id="monthly-breakdown"></div>
+        <h3>Số liệu từng ngày và nguồn</h3>
+        <div class="table-wrap" id="daily-table"></div>
+      </section>
+      <section class="card">
+        <div class="row-head"><h2>Các bài viết và kết luận trong kỳ</h2><span id="article-count" class="muted"></span></div>
+        <div id="articles"></div>
+      </section>
+    </div>
+  </main>
+  <script src="/static/progress.js"></script>
+  <script>
+    const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[char]);
+    const n = value => Number(value || 0).toLocaleString('vi-VN');
+    const periodLabel = (group, key) => group === 'month' ? `Tháng ${key.slice(5)}/${key.slice(0, 4)}` : `Quý ${key.slice(-1)}/${key.slice(0, 4)}`;
+    const reportLink = id => '/report?id=' + encodeURIComponent(id);
+    let periods = {month: [], quarter: []};
+    let overviewRequest = 0;
+
+    function renderVehicleTable(rows) {
+      if (!rows.length) return '<p>Chưa có ngày nào có số liệu container được xác nhận trong kỳ.</p>';
+      return '<table><thead><tr><th>Ngày</th><th class="number">Việt Nam</th><th class="number">Thái Lan</th><th class="number">Tổng</th><th>Nguồn</th></tr></thead><tbody>' + rows.map(row => {
+        const saved = row.source_id ? `<a href="${reportLink(row.source_id)}">Bài đã lưu</a>` : '';
+        const original = row.source_url ? `<a href="${escapeHtml(row.source_url)}" target="_blank" rel="noopener">WeChat gốc</a>` : '';
+        const evidence = row.source_excerpt ? `<details><summary>Dòng gốc</summary><pre>${escapeHtml(row.source_excerpt)}</pre></details>` : '';
+        return `<tr><td>${escapeHtml(row.date)}</td><td class="number">${n(row.vietnam)}</td><td class="number">${n(row.thailand)}</td><td class="number">${n(row.total)}</td><td>${[saved, original].filter(Boolean).join(' · ')}${evidence}</td></tr>`;
+      }).join('') + '</tbody></table>';
+    }
+
+    function renderOverview(data) {
+      const label = periodLabel(data.group, data.key);
+      const vehicles = data.vehicles;
+      document.querySelector('#period-facts').innerHTML = `<h2>Báo cáo tổng hợp ${escapeHtml(label)}</h2>` +
+        `<p>Đã lưu <strong>${n(data.article_count)} bài viết</strong> trong kỳ. Số liệu hải quan có <strong>${n(vehicles.days_with_data)} ngày</strong>, ghi nhận <strong>${n(vehicles.total)} container</strong>: Việt Nam ${n(vehicles.vietnam)}, Thái Lan ${n(vehicles.thailand)}.</p>` +
+        '<p class="muted">Bài viết được xếp theo ngày phát hành. Mỗi kết luận bên dưới lấy từ báo cáo tiếng Việt của chính bài đó.</p>';
+      const aggregate = document.querySelector('#period-report');
+      aggregate.className = '';
+      if (data.period_report) {
+        aggregate.innerHTML = '<h3>Nhận định tổng hợp từ các bài viết</h3>' +
+          `<p class="muted">Đã tổng hợp ${n(data.period_report.source_article_count)} bài có kết luận tiếng Việt.</p>` +
+          `<div class="report-text">${escapeHtml(data.period_report.summary)}</div>` +
+          '<h3>Kết luận chung</h3>' + `<div class="report-text">${escapeHtml(data.period_report.conclusion)}</div>`;
+      } else {
+        aggregate.innerHTML = data.can_generate_report ? '<p class="muted">Đang tạo nhận định tổng hợp từ các bài có kết luận tiếng Việt...</p>' : '<p class="muted">Chưa có nhận định tổng hợp. Các kết luận của từng bài vẫn hiển thị bên dưới.</p>';
+      }
+      document.querySelector('#regenerate').hidden = !data.can_generate_report;
+      document.querySelector('#vehicle-note').textContent = `Số liệu được xếp theo ngày ghi trong bài, gồm ${vehicles.days_with_data} ngày có dữ liệu trong ${label.toLowerCase()}. Ngày chưa có dữ liệu không được tính là 0. Đơn vị gốc là container.`;
+      const stats = [
+        ['Việt Nam', vehicles.vietnam], ['Thái Lan', vehicles.thailand],
+        ['Tổng ghi nhận', vehicles.total], ['Ngày có dữ liệu', vehicles.days_with_data],
+      ];
+      document.querySelector('#vehicle-stats').innerHTML = stats.map(([name, value]) => `<div class="stat">${name}<strong>${n(value)}</strong></div>`).join('');
+      const monthly = document.querySelector('#monthly-breakdown');
+      monthly.innerHTML = data.group === 'quarter' && data.months.length ? '<h3>Theo từng tháng trong quý</h3><div class="table-wrap"><table><thead><tr><th>Tháng</th><th class="number">Bài viết</th><th class="number">Ngày có dữ liệu</th><th class="number">Việt Nam</th><th class="number">Thái Lan</th><th class="number">Tổng</th></tr></thead><tbody>' + data.months.map(item => `<tr><td>${escapeHtml(item.month)}</td><td class="number">${n(item.article_count)}</td><td class="number">${n(item.vehicles.days_with_data)}</td><td class="number">${n(item.vehicles.vietnam)}</td><td class="number">${n(item.vehicles.thailand)}</td><td class="number">${n(item.vehicles.total)}</td></tr>`).join('') + '</tbody></table></div>' : '';
+      document.querySelector('#daily-table').innerHTML = renderVehicleTable(data.daily);
+      document.querySelector('#article-count').textContent = `${n(data.article_count)} bài viết`;
+      document.querySelector('#articles').innerHTML = data.articles.length ? data.articles.map(item => {
+        const source = item.source_url ? ` · <a href="${escapeHtml(item.source_url)}" target="_blank" rel="noopener">WeChat gốc</a>` : '';
+        const conclusion = item.conclusion ? `<p class="conclusion">${escapeHtml(item.conclusion)}</p>` : '<p class="muted">Bài này chưa có kết luận tiếng Việt; mở bài để tạo báo cáo.</p>';
+        const summary = item.summary ? `<details><summary>Đọc báo cáo tiếng Việt của bài</summary><div>${escapeHtml(item.summary)}</div></details>` : '';
+        return `<article class="article"><h3><a href="${reportLink(item.id)}">${escapeHtml(item.title)}</a></h3><p class="muted">${escapeHtml(item.date)} · ${escapeHtml(item.account_name)}${source}</p>${conclusion}${summary}</article>`;
+      }).join('') : '<p>Chưa có bài viết nào đã lưu trong kỳ này.</p>';
+      document.querySelector('#report').hidden = false;
+    }
+
+    async function loadOverview() {
+      const request = ++overviewRequest;
+      const group = document.querySelector('#group').value;
+      const key = document.querySelector('#period').value;
+      const status = document.querySelector('#status');
+      document.querySelector('#report').hidden = true;
+      document.querySelector('#report-log').hidden = true;
+      if (!key) { status.textContent = 'Chưa có bài viết hoặc số liệu trong kỳ.'; return; }
+      status.className = 'muted';
+      status.textContent = 'Đang tổng hợp dữ liệu...';
+      try {
+        const response = await fetch(`/api/period-overviews/${group}/${key}?ts=${Date.now()}`, {cache: 'no-store'});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Không đọc được báo cáo.');
+        if (request !== overviewRequest) return;
+        renderOverview(data);
+        status.textContent = '';
+        history.replaceState(null, '', `/overview?group=${group}&period=${key}`);
+        if (!data.period_report && data.can_generate_report) generatePeriodReport(group, key, request);
+      } catch (error) {
+        if (request !== overviewRequest) return;
+        status.className = 'error';
+        status.textContent = error.message;
+      }
+    }
+
+    async function generatePeriodReport(group, key, request) {
+      const button = document.querySelector('#regenerate');
+      button.disabled = true;
+      try {
+        await runArticleJob(`/api/period-overviews/${group}/${key}/jobs`, {method: 'POST'}, document.querySelector('#report-log'));
+        if (request === overviewRequest) loadOverview();
+      } catch (error) {
+        if (request === overviewRequest) {
+          document.querySelector('#period-report').textContent = 'Chưa tạo được nhận định tổng hợp: ' + error.message;
+          document.querySelector('#period-report').className = 'error';
+        }
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    document.querySelector('#regenerate').addEventListener('click', () => {
+      const group = document.querySelector('#group').value;
+      const key = document.querySelector('#period').value;
+      if (key) generatePeriodReport(group, key, overviewRequest);
+    });
+
+    function fillPeriods(preferred) {
+      const group = document.querySelector('#group').value;
+      const select = document.querySelector('#period');
+      select.innerHTML = (periods[group] || []).map(key => `<option value="${key}">${periodLabel(group, key)}</option>`).join('');
+      if (preferred && periods[group].includes(preferred)) select.value = preferred;
+      loadOverview();
+    }
+
+    document.querySelector('#group').addEventListener('change', () => fillPeriods());
+    document.querySelector('#period').addEventListener('change', loadOverview);
+    (async () => {
+      const status = document.querySelector('#status');
+      try {
+        const response = await fetch('/api/period-overviews/periods?ts=' + Date.now(), {cache: 'no-store'});
+        if (!response.ok) throw new Error('Không tải được danh sách kỳ báo cáo.');
+        periods = await response.json();
+        const params = new URLSearchParams(location.search);
+        if (params.get('group') === 'quarter') document.querySelector('#group').value = 'quarter';
+        fillPeriods(params.get('period'));
+      } catch (error) {
+        status.className = 'error';
+        status.textContent = error.message;
+      }
+    })();
+  </script>
+</body>
+</html>

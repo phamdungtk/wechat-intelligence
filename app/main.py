@@ -21,6 +21,9 @@ from dotenv import load_dotenv
 
 from app.downloader.downloader import download_article
 from app.reporting import article_report, daily_vehicle_counts
+from app.period_overview import (
+    available_periods, build_period_overview, load_period_report, period_report_input, save_period_report,
+)
 from app.wechat_account import CAPTURE_LOG_PATH, WeChatAccountDownloader, capture_logger
 from app.wechat_history import latest_post
 from app.jobs import get_job, start_job
@@ -164,6 +167,46 @@ def latest_report():
 @app.get("/api/export-vehicles/daily")
 def export_vehicles_daily():
     return {"items": daily_vehicle_counts(BASE_DIR / "storage" / "raw")}
+
+
+@app.get("/api/period-overviews/periods")
+def period_overview_periods():
+    return available_periods(_saved_articles(), daily_vehicle_counts(BASE_DIR / "storage" / "raw"))
+
+
+@app.get("/api/period-overviews/{group}/{key}")
+def period_overview(group: str, key: str):
+    try:
+        overview = build_period_overview(
+            _saved_articles(), daily_vehicle_counts(BASE_DIR / "storage" / "raw"),
+            BASE_DIR / "storage" / "raw", group, key,
+        )
+        overview["period_report"] = load_period_report(BASE_DIR / "storage", overview)
+        overview["can_generate_report"] = bool(period_report_input(overview)) and has_api_key()
+        return overview
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/period-overviews/{group}/{key}/jobs")
+def period_overview_job(group: str, key: str):
+    try:
+        overview = build_period_overview(
+            _saved_articles(), daily_vehicle_counts(BASE_DIR / "storage" / "raw"),
+            BASE_DIR / "storage" / "raw", group, key,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not period_report_input(overview):
+        raise HTTPException(status_code=400, detail="Chưa có kết luận tiếng Việt trong các bài của kỳ này")
+    if not has_api_key():
+        raise HTTPException(status_code=503, detail="Máy chủ chưa có OPENAI_API_KEY")
+    def work(progress: Progress):
+        _progress(progress, "Đang tổng hợp kết luận từ các bài viết trong kỳ.")
+        report = save_period_report(BASE_DIR / "storage", overview)
+        _progress(progress, "Đã lưu báo cáo tổng hợp tiếng Việt.")
+        return report
+    return start_job("period_overview", work)
 
 
 @app.get("/api/latest-article")
@@ -399,6 +442,11 @@ def report_page():
 @app.get("/articles", response_class=FileResponse)
 def articles_page():
     return FileResponse(STATIC_DIR / "articles.html", headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
+
+
+@app.get("/overview", response_class=FileResponse)
+def overview_page():
+    return FileResponse(STATIC_DIR / "overview.html", headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
 @app.post("/api/wechat/desktop/open")

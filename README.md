@@ -88,6 +88,10 @@ Nút **Cập nhật bài viết** ở danh sách và trang chi tiết tải lạ
 
 Nút **Xóa bài viết** ở danh sách và trang chi tiết yêu cầu xác nhận, sau đó bỏ đúng bài được chọn khỏi danh sách và dashboard. Máy chủ chuyển bản gốc vào `storage/trash/` để có thể khôi phục thủ công nếu xóa nhầm.
 
+Trang **Tổng hợp tháng/quý** (`/overview`) gom các bài WeChat đã lưu theo ngày phát hành, hiển thị kết luận và báo cáo tiếng Việt của từng bài, rồi tạo nhận định chung bằng OpenAI API khi đã có key. Nhận định chung được lưu tạm và tự tạo lại khi kết luận nguồn thay đổi. Bài trùng URL chỉ tính một lần.
+
+Báo cáo xe tháng/quý cộng số container Việt Nam và Thái Lan theo **ngày số liệu** từ dashboard hải quan đường bộ. Mỗi ngày chỉ tính một bản ghi đã được dashboard chọn; báo cáo cho biết số ngày có dữ liệu và dẫn về bài gốc. Ngày thiếu dữ liệu không được tính là 0, nên tổng chỉ phản ánh các ngày đã ghi nhận, không phải ước tính cả tháng/quý.
+
 Khi tải hoặc cập nhật bài, trang hiển thị nhật ký từng bước và lỗi nếu có. Trên Ubuntu có thể xem chi tiết lỗi máy chủ bằng `sudo journalctl -u wechat-intelligence -f`.
 
 Nếu PowerShell chặn lệnh kích hoạt môi trường ảo, chạy trực tiếp bằng `.\.venv\Scripts\python.exe -m pip install -r requirements.txt` và `.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000`.
