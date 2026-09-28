@@ -41,12 +41,19 @@ def desktop_status() -> dict:
 
 
 def desktop_login_state() -> str:
-    text = screen_text().lower()
+    rows = read_screen()
+    text = " ".join(row["text"] for row in rows).lower()
     if "official" in text and "accounts" in text:
         return "logged_in"
     if "confirm" in text and "phone" in text:
         return "confirm_phone"
-    if "log in" in text or "login" in text:
+    account_picker = (
+        any(row["text"].lower() in {"wechat", "echat"} and 190 <= row["y"] <= 225
+            and 380 <= row["x"] <= 455 for row in rows)
+        and any(350 <= row["y"] <= 420 and 450 <= row["x"] <= 570
+                and len(row["text"]) >= 3 for row in rows)
+    )
+    if "log in" in text or "login" in text or account_picker:
         return "login_required"
     if "qr" in text or "scan" in text or "扫描" in text or "二维码" in text:
         return "scan_qr"
