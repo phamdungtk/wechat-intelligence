@@ -23,6 +23,7 @@
     select { min-width: 170px; padding: 11px 12px; border: 1px solid #cbd5e1; border-radius: 9px; background: white; color: inherit; font: inherit; }
     .sync-button { padding: 12px 16px; border: 0; border-radius: 9px; background: #2563eb; color: white; font: inherit; font-weight: 700; cursor: pointer; }
     .sync-button:disabled { opacity: .6; cursor: wait; }
+    .login-screen { display: block; width: min(100%, 720px); margin-top: 16px; border: 1px solid #e1e7f0; border-radius: 12px; background: #111; }
     .card { background: white; border: 1px solid #e1e7f0; border-radius: 16px; padding: clamp(20px, 4vw, 32px); margin-bottom: 18px; box-shadow: 0 8px 25px #1720330d; }
     .stat-grid { margin: 20px 0; }
     .stat { flex: 1 1 170px; background: #f3f6fb; border-radius: 12px; padding: 16px; }
@@ -62,6 +63,13 @@
     </div>
     <p id="sync-status" role="status" aria-live="polite"></p>
     <ol id="sync-log" class="progress-log" aria-label="Nhật ký lấy bài theo kỳ" hidden></ol>
+    <section id="wechat-login" class="card" hidden>
+      <h2>Đăng nhập WeChat để lấy bài</h2>
+      <p id="wechat-login-status" class="muted" role="status" aria-live="polite">Đang kiểm tra WeChat Desktop...</p>
+      <button id="wechat-login-button" class="sync-button" type="button">Hiện mã QR đăng nhập</button>
+      <img id="wechat-login-screen" class="login-screen" alt="Màn hình đăng nhập WeChat để quét mã QR" hidden>
+      <p id="wechat-login-help" class="muted" hidden>Quét mã bằng WeChat trên điện thoại, rồi xác nhận đăng nhập.</p>
+    </section>
     <p id="status" role="status" aria-live="polite"></p>
     <div id="report" hidden>
       <section class="card" id="summary">
@@ -241,6 +249,58 @@
         button.disabled = false;
       }
     });
+
+    const loginCard = document.querySelector('#wechat-login');
+    const loginStatus = document.querySelector('#wechat-login-status');
+    const loginScreen = document.querySelector('#wechat-login-screen');
+    const loginHelp = document.querySelector('#wechat-login-help');
+    let loginTimer;
+    let loginShown = false;
+
+    async function refreshWechatLogin() {
+      try {
+        const response = await fetch('/api/wechat/desktop/login/state?ts=' + Date.now(), {cache: 'no-store'});
+        if (!response.ok) throw new Error((await response.json()).detail || 'Không kiểm tra được trạng thái WeChat.');
+        const {state} = await response.json();
+        if (state === 'logged_in') {
+          loginCard.hidden = true;
+          loginScreen.hidden = true;
+          clearTimeout(loginTimer);
+          return;
+        }
+        loginCard.hidden = false;
+        loginShown = true;
+        loginScreen.hidden = false;
+        loginHelp.hidden = false;
+        loginStatus.textContent = state === 'confirm_phone' ? 'Đã quét mã; hãy xác nhận đăng nhập trên điện thoại.'
+          : state === 'login_required' ? 'WeChat chưa đăng nhập. Bấm nút để mở mã QR.'
+          : state === 'scan_qr' ? 'Quét mã QR bên dưới bằng WeChat trên điện thoại.'
+          : 'WeChat Desktop đang khởi động hoặc chưa hiện màn hình đăng nhập.';
+        if (loginShown) loginScreen.src = '/api/wechat/desktop/login/screen.png?ts=' + Date.now();
+      } catch (error) {
+        loginCard.hidden = false;
+        loginStatus.textContent = error.message;
+      }
+      loginTimer = setTimeout(refreshWechatLogin, 5000);
+    }
+
+    document.querySelector('#wechat-login-button').addEventListener('click', async () => {
+      const button = document.querySelector('#wechat-login-button');
+      button.disabled = true;
+      try {
+        await fetch('/api/wechat/desktop/login/prepare', {method: 'POST'});
+        loginShown = true;
+        loginScreen.hidden = false;
+        loginHelp.hidden = false;
+        await refreshWechatLogin();
+      } catch (error) {
+        loginStatus.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    refreshWechatLogin();
 
     document.querySelector('#group').addEventListener('change', () => fillPeriods());
     document.querySelector('#period').addEventListener('change', loadOverview);

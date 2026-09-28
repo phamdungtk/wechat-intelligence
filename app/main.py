@@ -14,7 +14,7 @@ from typing import Callable
 import logging
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
@@ -221,6 +221,42 @@ def sync_period_job(group: str, key: str):
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
     return start_job("sync_period", work)
+
+
+@app.get("/api/wechat/desktop/login/state")
+def wechat_desktop_login_state():
+    from app.wechat_desktop import desktop_login_state, desktop_lock
+    try:
+        with desktop_lock():
+            return {"state": desktop_login_state()}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/wechat/desktop/login/prepare")
+def prepare_wechat_desktop_login():
+    from app.wechat_desktop import prepare_desktop_login
+    try:
+        return {"state": prepare_desktop_login()}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/api/wechat/desktop/login/screen.png")
+def wechat_desktop_login_screen():
+    from app.wechat_desktop import desktop_login_state, desktop_lock, screenshot
+    try:
+        with desktop_lock():
+            state = desktop_login_state()
+            if state == "logged_in":
+                raise HTTPException(status_code=409, detail="WeChat đã đăng nhập.")
+            path = screenshot(BASE_DIR / "storage" / "wechat_desktop" / "login-screen.png")
+            return Response(
+                content=path.read_bytes(), media_type="image/png",
+                headers={"Cache-Control": "no-store"},
+            )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/api/latest-article")

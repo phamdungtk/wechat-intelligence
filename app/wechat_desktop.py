@@ -40,6 +40,29 @@ def desktop_status() -> dict:
     return {"container": CONTAINER, "state": result.stdout.strip() if result.returncode == 0 else "not_installed"}
 
 
+def desktop_login_state() -> str:
+    text = screen_text().lower()
+    if "official" in text and "accounts" in text:
+        return "logged_in"
+    if "confirm" in text and "phone" in text:
+        return "confirm_phone"
+    if "log in" in text or "login" in text:
+        return "login_required"
+    if "qr" in text or "scan" in text or "扫描" in text or "二维码" in text:
+        return "scan_qr"
+    return "starting"
+
+
+def prepare_desktop_login() -> str:
+    with desktop_lock():
+        state = desktop_login_state()
+        if state == "login_required":
+            click(512, 475)
+            time.sleep(2)
+            state = desktop_login_state()
+        return state
+
+
 def clipboard_article_url() -> str | None:
     result = docker_exec("xclip", "-selection", "clipboard", "-o", check=False)
     if result.returncode:
