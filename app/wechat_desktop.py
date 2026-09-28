@@ -315,8 +315,8 @@ def _open_account_archive(progress=None) -> None:
 
         def followed_account_y(items):
             category = next((row for row in items
-                             if "official" in row["text"].lower()
-                             and "accounts" in row["text"].lower()
+                             if ("official" in row["text"].lower()
+                                 or "accounts" in row["text"].lower())
                              and 70 <= row["x"] <= 300 and 70 <= row["y"] <= 205), None)
             if category is None:
                 return None
@@ -333,8 +333,8 @@ def _open_account_archive(progress=None) -> None:
         target_y = followed_account_y(rows)
         if target is None and target_y is None:
             category_rows = [row for row in rows
-                             if "official" in row["text"].lower()
-                             and "accounts" in row["text"].lower()
+                             if ("official" in row["text"].lower()
+                                 or "accounts" in row["text"].lower())
                              and 70 <= row["x"] <= 300 and 70 <= row["y"] <= 205]
             if category_rows:
                 category_y = round(sum(row["y"] + row["height"] // 2
