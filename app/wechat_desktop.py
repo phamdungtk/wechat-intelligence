@@ -368,6 +368,7 @@ def _open_account_archive(progress=None) -> None:
                 f"Đã chọn tài khoản nhưng chưa mở được hồ sơ 榴莲产业网 "
                 f"(màn hình: {profile_text[:240]})"
             )
+        account_identified = True
     def find_article_tab(items):
         return next((row for row in items if "文章" in row["text"] and 300 <= row["x"] <= 600
                      and 60 <= row["y"] <= 500), None)
@@ -520,6 +521,8 @@ def sync_period_articles(group: str, key: str, progress=None, *, max_scrolls: in
              for path, metadata, _ in _saved_articles()}
     seen_urls: set[str] = set()
     seen_groups: set[str] = set()
+    seen_positions: set[tuple[str, int]] = set()
+    link_failures: dict[tuple[str, int], int] = {}
     client = WeChatClient(timeout=25, interval_seconds=0.5)
     with desktop_lock():
         _open_account_archive(progress)
@@ -535,22 +538,50 @@ def sync_period_articles(group: str, key: str, progress=None, *, max_scrolls: in
                 for card in _archive_card_groups(image):
                     if card["signature"] in seen_groups:
                         continue
-                    seen_groups.add(card["signature"])
                     card_dates = []
+                    resume_archive = False
                     for position in card["positions"]:
+                        position_key = (card["signature"], position)
+                        if position_key in seen_positions:
+                            continue
+                        url = None
+                        read_error = None
                         try:
                             click(500, position)
                             url = _copy_open_article_url()
                         except Exception as exc:
-                            message = f"Không đọc được một thẻ bài ở vị trí {position}: {exc}"
-                            result["failures"].append(message)
-                            if progress:
-                                progress(message)
-                            continue
+                            read_error = exc
                         finally:
                             # Each archive card opens a second browser tab. Closing it
                             # restores the archive and its scroll position.
                             _close_article_tab()
+
+                        if read_error:
+                            attempts = link_failures.get(position_key, 0) + 1
+                            if attempts < 2:
+                                link_failures[position_key] = attempts
+                                if progress:
+                                    progress(
+                                        f"Thẻ bài ở vị trí {position} chưa tải xong; "
+                                        "đang mở lại kho để thử lại."
+                                    )
+                            else:
+                                message = f"Không đọc được một thẻ bài ở vị trí {position}: {read_error}"
+                                result["failures"].append(message)
+                                seen_positions.add(position_key)
+                                if progress:
+                                    progress(message)
+
+                            if find_article_tab(read_screen()) is None:
+                                _open_account_archive(progress)
+                                resume_archive = True
+                            if attempts < 2:
+                                resume_archive = True
+                            if resume_archive:
+                                break
+                            continue
+
+                        seen_positions.add(position_key)
                         identity = _canonical_url(url)
                         if identity in seen_urls:
                             continue
@@ -606,6 +637,13 @@ def sync_period_articles(group: str, key: str, progress=None, *, max_scrolls: in
                             result["failures"].append(message)
                             if progress:
                                 progress(message)
+                    if resume_archive:
+                        stagnant = 0
+                        previous_screen = None
+                        continue
+                    if all((card["signature"], position) in seen_positions
+                           for position in card["positions"]):
+                        seen_groups.add(card["signature"])
                     if card_dates and max(card_dates) < start and len(seen_groups) > 1:
                         older_groups += 1
                     else:
