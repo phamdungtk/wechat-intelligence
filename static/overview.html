@@ -255,7 +255,7 @@
     const loginScreen = document.querySelector('#wechat-login-screen');
     const loginHelp = document.querySelector('#wechat-login-help');
     let loginTimer;
-    let loginShown = false;
+    let loginImageState = '';
 
     async function refreshWechatLogin() {
       try {
@@ -265,18 +265,26 @@
         if (state === 'logged_in') {
           loginCard.hidden = true;
           loginScreen.hidden = true;
+          loginScreen.removeAttribute('src');
+          loginImageState = '';
           clearTimeout(loginTimer);
           return;
         }
         loginCard.hidden = false;
-        loginShown = true;
-        loginScreen.hidden = false;
-        loginHelp.hidden = false;
+        const showLoginScreen = state === 'scan_qr' || state === 'confirm_phone';
+        loginScreen.hidden = !showLoginScreen;
+        loginHelp.hidden = !showLoginScreen;
         loginStatus.textContent = state === 'confirm_phone' ? 'Đã quét mã; hãy xác nhận đăng nhập trên điện thoại.'
           : state === 'login_required' ? 'WeChat chưa đăng nhập. Bấm nút để mở mã QR.'
           : state === 'scan_qr' ? 'Quét mã QR bên dưới bằng WeChat trên điện thoại.'
           : 'WeChat Desktop đang khởi động hoặc chưa hiện màn hình đăng nhập.';
-        if (loginShown) loginScreen.src = '/api/wechat/desktop/login/screen.png?ts=' + Date.now();
+        if (showLoginScreen && loginImageState !== state) {
+          loginScreen.src = '/api/wechat/desktop/login/screen.png?ts=' + Date.now();
+          loginImageState = state;
+        } else if (!showLoginScreen) {
+          loginScreen.removeAttribute('src');
+          loginImageState = '';
+        }
       } catch (error) {
         loginCard.hidden = false;
         loginStatus.textContent = error.message;
@@ -292,9 +300,7 @@
         const response = await fetch('/api/wechat/desktop/login/prepare', {method: 'POST'});
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || 'Không mở được màn hình đăng nhập WeChat.');
-        loginShown = true;
-        loginScreen.hidden = false;
-        loginHelp.hidden = false;
+        loginImageState = '';
         await refreshWechatLogin();
       } catch (error) {
         loginStatus.textContent = error.message;

@@ -305,7 +305,7 @@ def _open_account_archive(progress=None) -> None:
         rows = read_screen()
 
     article_tab = next((row for row in rows if "文章" in row["text"] and 300 <= row["x"] <= 600
-                        and 180 <= row["y"] <= 500), None)
+                        and 60 <= row["y"] <= 500), None)
     if article_tab is None:
         state = " ".join(row["text"] for row in rows)
         raise RuntimeError(f"Đã mở WeChat nhưng không thấy thẻ bài viết của Official Account (màn hình: {state[:240]})")
