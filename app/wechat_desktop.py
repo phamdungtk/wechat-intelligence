@@ -138,12 +138,6 @@ def _position_browser() -> bool:
     return True
 
 
-def _close_browser_windows() -> None:
-    for window_id in _browser_windows():
-        docker_exec("xdotool", "windowclose", window_id, check=False)
-    time.sleep(0.5)
-
-
 def keypress(key: str) -> None:
     allowed = {"Return", "Escape", "Tab", "ctrl+c", "ctrl+v", "ctrl+a", "ctrl+f", "BackSpace"}
     if key not in allowed:
@@ -228,12 +222,7 @@ def _fetch_latest_article() -> dict | None:
     """Open the newest article in WeChat Official Accounts and import its copied link."""
     state = screen_text()
     if "Official" not in state or "Accounts" not in state:
-        # Close the embedded article browser; this returns to the Official Accounts feed.
-        click(944, 54)
-        time.sleep(1)
-        state = screen_text()
-    if "Official" not in state or "Accounts" not in state:
-        raise RuntimeError("Không thấy trang Official Accounts trong WeChat")
+        raise RuntimeError(f"WeChat chưa ở trang Official Accounts (màn hình hiện tại: {state[:240]})")
     if "榴莲" not in state and "莲" not in state:
         raise RuntimeError("Không thấy bài mới của tài khoản 榴莲产业网")
 
@@ -249,7 +238,8 @@ def _fetch_latest_article() -> dict | None:
         LOGGER.info("Latest WeChat article result: %s", result or "already saved")
         return result
     finally:
-        click(944, 54)
+        if _position_browser():
+            click(658, 54)
 
 
 def fetch_latest_article() -> dict | None:
@@ -258,9 +248,6 @@ def fetch_latest_article() -> dict | None:
 
 
 def _open_account_archive(progress=None) -> None:
-    # The browser may have been left off-screen after an earlier article was
-    # opened. Start from the feed and open one clean account archive tab.
-    _close_browser_windows()
     state = screen_text()
     if "Official" not in state or "Accounts" not in state:
         raise RuntimeError("Không thấy trang Official Accounts trong WeChat")
@@ -497,7 +484,9 @@ def sync_period_articles(group: str, key: str, progress=None, *, max_scrolls: in
             result["failures"].append("Đã đạt giới hạn cuộn kho bài trước khi hết kỳ.")
             return result
         finally:
-            _close_browser_windows()  # Return to the Official Accounts feed.
+            # Leave WeChat on the account archive. Closing the whole window here
+            # can close the authenticated desktop session as well.
+            pass
 
 
 def sync_today_articles(progress=None) -> dict:
