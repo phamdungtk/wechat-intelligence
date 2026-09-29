@@ -314,6 +314,24 @@ def _find_article_tab(items: list[dict]) -> dict | None:
                  and 60 <= row["y"] <= 500), None)
 
 
+def _profile_article_tab_fallback(items: list[dict]) -> dict | None:
+    """Locate the fixed article tab when OCR cannot read the Chinese label."""
+    if not any("已关注" in row["text"] for row in items):
+        return None
+    tab_anchors = [row for row in items
+                   if any(label in row["text"] for label in ("全部", "贴图", "视频号"))
+                   and 300 <= row["x"] <= 600 and 200 <= row["y"] <= 600]
+    if tab_anchors:
+        tab_y = round(sum(row["y"] + row["height"] // 2 for row in tab_anchors) / len(tab_anchors))
+    else:
+        followed = next(row for row in items if "已关注" in row["text"])
+        # On the 1024x768 WeChat profile, the tab strip sits just below the
+        # Follow/Message buttons. Those button labels are much clearer in OCR
+        # than the small article tab glyphs.
+        tab_y = followed["y"] + followed["height"] + 39
+    return {"text": "文章", "x": 429, "y": tab_y - 7, "width": 10, "height": 14}
+
+
 def _open_account_archive(progress=None) -> None:
     if progress:
         progress("Đang mở kho bài của tài khoản 榴莲产业网.")
@@ -403,10 +421,11 @@ def _open_account_archive(progress=None) -> None:
         account_identified = True
     article_tab = _find_article_tab(rows)
     if article_tab is None and account_identified:
+        article_tab = _profile_article_tab_fallback(rows)
         current_text = " ".join(row["text"] for row in rows)
         # A native Friend Profile needs one extra step before the embedded
         # history page exposes its tabs.
-        if "Friend Profile" in current_text:
+        if article_tab is None and "Friend Profile" in current_text:
             history_button = next((row for row in rows
                                    if "history" in row["text"].lower()
                                    or "历史" in row["text"]), None)
@@ -418,12 +437,13 @@ def _open_account_archive(progress=None) -> None:
 
         # WeChat loads the account history in a web view; its tab strip can take
         # several seconds to appear after View History is opened.
-        for _ in range(20):
-            time.sleep(1)
-            rows = read_screen()
-            article_tab = _find_article_tab(rows)
-            if article_tab:
-                break
+        if article_tab is None:
+            for _ in range(20):
+                time.sleep(1)
+                rows = read_screen()
+                article_tab = _find_article_tab(rows) or _profile_article_tab_fallback(rows)
+                if article_tab:
+                    break
 
     if article_tab is None:
         state = " ".join(row["text"] for row in rows)
