@@ -316,19 +316,22 @@ def _find_article_tab(items: list[dict]) -> dict | None:
 
 def _profile_article_tab_fallback(items: list[dict]) -> dict | None:
     """Locate the fixed article tab when OCR cannot read the Chinese label."""
-    if not any("已关注" in row["text"] for row in items):
-        return None
     tab_anchors = [row for row in items
                    if any(label in row["text"] for label in ("全部", "贴图", "视频号"))
                    and 300 <= row["x"] <= 600 and 200 <= row["y"] <= 600]
     if tab_anchors:
         tab_y = round(sum(row["y"] + row["height"] // 2 for row in tab_anchors) / len(tab_anchors))
     else:
-        followed = next(row for row in items if "已关注" in row["text"])
+        follow_parts = [row for row in items if row["text"].strip() in {"已", "关注"}
+                        and 300 <= row["x"] <= 450 and 250 <= row["y"] <= 350]
+        if not follow_parts:
+            return None
+        followed_y = round(sum(row["y"] + row["height"] // 2 for row in follow_parts)
+                           / len(follow_parts))
         # On the 1024x768 WeChat profile, the tab strip sits just below the
         # Follow/Message buttons. Those button labels are much clearer in OCR
         # than the small article tab glyphs.
-        tab_y = followed["y"] + followed["height"] + 39
+        tab_y = followed_y + 48
     return {"text": "文章", "x": 429, "y": tab_y - 7, "width": 10, "height": 14}
 
 
