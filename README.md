@@ -44,7 +44,7 @@ sudo bash deploy/install-desktop-collector.sh
 sudo journalctl -u wechat-intelligence-collector -f
 ```
 
-Mỗi giờ dịch vụ mở bài mới nhất trong **Official Accounts**, chọn **CopyLink**, tải bài và lưu riêng vào dashboard. Link đã lưu sẽ không bị tạo trùng; nếu bài cũ chưa có báo cáo tiếng Việt, dịch vụ sẽ thử tạo lại khi OpenAI API key đã được cấu hình. Link WeChat bạn tự sao chép cũng được nhận tự động. Xem log bằng `sudo journalctl -u wechat-intelligence-collector -f`.
+Mỗi giờ dịch vụ quét kho bài của ngày hiện tại trong **Official Accounts**, lưu các bài mới chưa có trong dữ liệu và bỏ qua link đã lưu. Nếu WeChat đang được dùng bởi một lượt đồng bộ khác, dịch vụ sẽ thử lại sau một phút. Link WeChat bạn tự sao chép cũng được nhận tự động. Xem log bằng `sudo journalctl -u wechat-intelligence-collector -f`.
 
 Trong **Bài viết đã lưu**, nút **Đồng bộ bài hôm nay** mở kho bài của 榴莲产业网, đọc các thẻ trong nhóm ngày hiện tại, tải bài chưa có và hiển thị tiến độ ngay trên trang. Nút và collector dùng chung khóa điều khiển để không thao tác WeChat cùng lúc.
 

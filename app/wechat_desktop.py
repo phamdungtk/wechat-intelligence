@@ -734,8 +734,16 @@ def watch_clipboard(interval: float = 5.0, refresh_interval: float = 3600.0) -> 
             if desktop_status()["state"] == "running":
                 now = time.monotonic()
                 if now >= next_refresh:
-                    fetch_latest_article()
-                    next_refresh = now + max(60.0, refresh_interval)
+                    LOGGER.info("Starting scheduled scan of today's WeChat article archive")
+                    result = sync_today_articles(lambda message: LOGGER.info("Daily archive scan: %s", message))
+                    LOGGER.info(
+                        "Scheduled daily scan finished: scanned=%s matched=%s imported=%s "
+                        "skipped_existing=%s complete=%s failures=%s",
+                        result.get("scanned", 0), result.get("matched", 0),
+                        result.get("imported", 0), result.get("skipped_existing", 0),
+                        result.get("complete", False), len(result.get("failures", [])),
+                    )
+                    next_refresh = time.monotonic() + max(60.0, refresh_interval)
                 try:
                     with desktop_lock():
                         url = clipboard_article_url()
@@ -745,8 +753,15 @@ def watch_clipboard(interval: float = 5.0, refresh_interval: float = 3600.0) -> 
                 except RuntimeError:
                     # The web button owns the WeChat window and clipboard.
                     pass
+        except RuntimeError as exc:
+            if "đang được đồng bộ" in str(exc).lower():
+                LOGGER.info("WeChat is busy; retrying the scheduled daily scan in 60 seconds")
+                next_refresh = time.monotonic() + 60.0
+            else:
+                LOGGER.exception("Failed to scan today's WeChat article archive")
+                next_refresh = time.monotonic() + max(300.0, refresh_interval)
         except Exception:
-            LOGGER.exception("Failed to import an article from the WeChat desktop clipboard")
+            LOGGER.exception("Failed to scan today's WeChat article archive")
             next_refresh = time.monotonic() + max(300.0, refresh_interval)
         time.sleep(interval)
 
