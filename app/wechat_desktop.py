@@ -318,7 +318,7 @@ def _profile_article_tab_fallback(items: list[dict]) -> dict | None:
     """Locate the fixed article tab when OCR cannot read the Chinese label."""
     tab_anchors = [row for row in items
                    if any(label in row["text"] for label in ("全部", "贴图", "视频号"))
-                   and 300 <= row["x"] <= 600 and 200 <= row["y"] <= 600]
+                   and 300 <= row["x"] <= 600 and 80 <= row["y"] <= 600]
     if tab_anchors:
         tab_y = round(sum(row["y"] + row["height"] // 2 for row in tab_anchors) / len(tab_anchors))
     else:
