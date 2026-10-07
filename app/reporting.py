@@ -65,13 +65,29 @@ def article_report(metadata: dict, content: str, vietnamese: dict | None = None,
 def daily_vehicle_counts(raw_root: Path) -> list[dict]:
     """Extract only the independent China land-port totals, not market inventory."""
     records: dict[str, dict] = {}
-    section_header = re.compile(r"^#{1,6}\s+(?:中国陆运海关|Hải quan [Đđ]ường bộ Trung Quốc)\s*$", re.I)
+    section_header = re.compile(r"^#{1,6}\s+(?:中国陆运海关(?:[｜|:].*)?|Hải quan [Đđ]ường bộ Trung Quốc(?:.*)?)\s*$", re.I)
+    trend_header = re.compile(r"^#{1,6}\s+(?:中国陆运近期趋势|中国陆运近\d+日趋势|Xu hướng hải quan đường bộ Trung Quốc)(?:.*)$", re.I)
     date_pattern = re.compile(r"20\d{2}-\d{2}-\d{2}")
+    short_date_pattern = re.compile(r"^(\d{2})-(\d{2})$")
     count_pattern = re.compile(r"\**\s*(\d[\d,.]*)\s*(?:柜|container|cont|xe)\s*\**", re.I)
     summary_pattern = re.compile(r"(?:中国陆运海关|Hải quan [Đđ]ường bộ Trung Quốc)", re.I)
     vietnam_pattern = re.compile(r"(?:越南|Việt Nam)\s*\**\s*(\d[\d,.]*)\s*(?:柜|container|cont|xe)", re.I)
     thailand_pattern = re.compile(r"(?:泰国|Thái Lan)\s*\**\s*(\d[\d,.]*)\s*(?:柜|container|cont|xe)", re.I)
     labels = {"越南": "vietnam", "Việt Nam": "vietnam", "泰国": "thailand", "Thái Lan": "thailand", "泰越合计": "total", "Tổng cộng": "total"}
+
+    def table_count(value: str) -> int | None:
+        match = re.fullmatch(r"\**\s*(\d[\d,]*)\s*(?:柜|container|cont|xe)?\s*\**", value.strip(), re.I)
+        return int(match.group(1).replace(",", "")) if match else None
+
+    def full_day(value: str, year: int) -> str | None:
+        match = date_pattern.search(value)
+        if match:
+            return match.group()
+        match = short_date_pattern.fullmatch(value.strip())
+        return f"{year}-{match.group(1)}-{match.group(2)}" if match else None
+
+    def heading_text(value: str) -> str:
+        return re.sub(r"^#{1,6}\s+", "", value.strip()).strip("* ")
 
     for path in raw_root.glob("*/*/*/*/*/article.md"):
         try:
@@ -80,8 +96,14 @@ def daily_vehicle_counts(raw_root: Path) -> list[dict]:
             continue
         lines = content.splitlines()
         candidates = []
+        article_date = date_pattern.search(content[:1500])
+        article_year = int(article_date.group()[:4]) if article_date else path.parent.parent.parent.parent.name
+        try:
+            article_year = int(article_year)
+        except (TypeError, ValueError):
+            article_year = 0
         for start, line in enumerate(lines):
-            if not section_header.match(line.strip()):
+            if not section_header.match(heading_text(line)):
                 continue
             window = lines[start + 1 : start + 35]
             date = next((match.group() for row in window[:8] if (match := date_pattern.search(row))), None)
@@ -100,13 +122,52 @@ def daily_vehicle_counts(raw_root: Path) -> list[dict]:
                 if key and match:
                     values[key] = int(match.group(1).replace(",", ""))
                     evidence_rows.append(row.strip())
+                elif key and any("来源国" in header and "独立出关" in header and "柜" in header
+                                 for header in window[:15]):
+                    value = table_count(cells[1])
+                    if value is not None:
+                        values[key] = value
+                        evidence_rows.append(row.strip())
             if "vietnam" not in values or "thailand" not in values:
                 continue
             calculated = values["vietnam"] + values["thailand"]
             if values.get("total", calculated) != calculated:
                 continue
             candidates.append((date, values, "\n".join(evidence_rows)))
-            break
+
+        # Newer DIN reports include a dated trend table. Its dates omit the
+        # year, and its columns are Thailand first, so read their header instead
+        # of assigning counts by fixed column positions.
+        if article_year:
+            for start, line in enumerate(lines):
+                if not trend_header.match(heading_text(line)):
+                    continue
+                header_index = next((index for index in range(start + 1, min(start + 8, len(lines)))
+                                     if lines[index].lstrip().startswith("|")
+                                     and "日期" in lines[index]), None)
+                if header_index is None:
+                    continue
+                headers = [cell.strip().strip("*") for cell in lines[header_index].strip("| ").split("|")]
+                date_index = next((i for i, cell in enumerate(headers) if "日期" in cell), None)
+                vietnam_index = next((i for i, cell in enumerate(headers) if "越南" in cell or "Việt Nam" in cell), None)
+                thailand_index = next((i for i, cell in enumerate(headers) if "泰国" in cell or "Thái Lan" in cell), None)
+                total_index = next((i for i, cell in enumerate(headers) if "泰越合计" in cell or "Tổng cộng" in cell), None)
+                if date_index is None or vietnam_index is None or thailand_index is None:
+                    continue
+                for row in lines[header_index + 1 : header_index + 35]:
+                    if not row.lstrip().startswith("|"):
+                        if not row.strip():
+                            break
+                        continue
+                    cells = [cell.strip().strip("*") for cell in row.strip("| ").split("|")]
+                    if max(date_index, vietnam_index, thailand_index) >= len(cells):
+                        continue
+                    date = full_day(cells[date_index], article_year)
+                    vietnam = table_count(cells[vietnam_index])
+                    thailand = table_count(cells[thailand_index])
+                    total = table_count(cells[total_index]) if total_index is not None and total_index < len(cells) else None
+                    if date and vietnam is not None and thailand is not None and total in (None, vietnam + thailand):
+                        candidates.append((date, {"vietnam": vietnam, "thailand": thailand}, row.strip()))
         if not candidates:
             for line in lines:
                 if not summary_pattern.search(line):
