@@ -349,12 +349,11 @@ def _open_account_archive(progress=None) -> None:
         time.sleep(0.5)
         rows = read_screen()
         text = " ".join(row["text"] for row in rows)
-    has_article_date = any(re.match(r"^20\d{2}[-/]\d{2}[-/]\d{2}$", row["text"]) for row in rows)
     account_identified = any(marker in text.lower()
                              for marker in ("榴莲", "产业网", "durianindustry"))
-    profile_open = account_identified and (has_article_date or any(
-        marker in text for marker in ("文章", "已关注", "关注", "私信", "View History", "Friend Profile")
-    ))
+    profile_cues = ("已关注", "关注", "私信", "View History", "Friend Profile")
+    has_profile_tabs = _find_article_tab(rows) is not None or _profile_article_tab_fallback(rows) is not None
+    profile_open = account_identified and (has_profile_tabs or any(marker in text for marker in profile_cues))
     if not profile_open:
         # Open Contacts, then select the account from the followed Official
         # Accounts list. The “Official Accounts” chat is only a Top Stories
@@ -426,6 +425,17 @@ def _open_account_archive(progress=None) -> None:
     if article_tab is None and account_identified:
         article_tab = _profile_article_tab_fallback(rows)
         current_text = " ".join(row["text"] for row in rows)
+        if article_tab is None and not any(marker in current_text
+                                           for marker in profile_cues):
+            # Selecting the followed account opens its chat. Its top-right
+            # profile icon leads to the official-account history page.
+            if progress:
+                progress("Đang mở hồ sơ tài khoản để vào kho bài viết.")
+            click(782, 103)
+            time.sleep(1)
+            rows = read_screen()
+            article_tab = _find_article_tab(rows) or _profile_article_tab_fallback(rows)
+            current_text = " ".join(row["text"] for row in rows)
         # A native Friend Profile needs one extra step before the embedded
         # history page exposes its tabs.
         if article_tab is None and "Friend Profile" in current_text:
