@@ -65,8 +65,8 @@ def article_report(metadata: dict, content: str, vietnamese: dict | None = None,
 def daily_vehicle_counts(raw_root: Path) -> list[dict]:
     """Extract only the independent China land-port totals, not market inventory."""
     records: dict[str, dict] = {}
-    section_header = re.compile(r"^#{1,6}\s+(?:中国陆运海关(?:[｜|:].*)?|Hải quan [Đđ]ường bộ Trung Quốc(?:.*)?)\s*$", re.I)
-    trend_header = re.compile(r"^#{1,6}\s+(?:中国陆运近期趋势|中国陆运近\d+日趋势|Xu hướng hải quan đường bộ Trung Quốc)(?:.*)$", re.I)
+    section_header = re.compile(r"^(?:中国陆运海关(?:[｜|:].*)?|Hải quan [Đđ]ường bộ Trung Quốc(?:.*)?)\s*$", re.I)
+    trend_header = re.compile(r"^(?:中国陆运近期趋势|中国陆运近\d+日趋势|Xu hướng hải quan đường bộ Trung Quốc)(?:.*)$", re.I)
     date_pattern = re.compile(r"20\d{2}-\d{2}-\d{2}")
     short_date_pattern = re.compile(r"^(\d{2})-(\d{2})$")
     count_pattern = re.compile(r"\**\s*(\d[\d,.]*)\s*(?:柜|container|cont|xe)\s*\**", re.I)
