@@ -65,8 +65,6 @@ def article_report(metadata: dict, content: str, vietnamese: dict | None = None,
 def daily_vehicle_counts(raw_root: Path) -> list[dict]:
     """Extract only the independent China land-port totals, not market inventory."""
     records: dict[str, dict] = {}
-    section_header = re.compile(r"^(?:中国陆运海关(?:[｜|:].*)?|Hải quan [Đđ]ường bộ Trung Quốc(?:.*)?)\s*$", re.I)
-    trend_header = re.compile(r"^(?:中国陆运近期趋势|中国陆运近\d+日趋势|Xu hướng hải quan đường bộ Trung Quốc)(?:.*)$", re.I)
     date_pattern = re.compile(r"20\d{2}-\d{2}-\d{2}")
     short_date_pattern = re.compile(r"^(\d{2})-(\d{2})$")
     count_pattern = re.compile(r"\**\s*(\d[\d,.]*)\s*(?:柜|container|cont|xe)\s*\**", re.I)
@@ -89,6 +87,15 @@ def daily_vehicle_counts(raw_root: Path) -> list[dict]:
     def heading_text(value: str) -> str:
         return re.sub(r"^#{1,6}\s+", "", value.strip()).strip("* ")
 
+    def is_customs_section(value: str) -> bool:
+        heading = heading_text(value).lower()
+        return heading.startswith("中国陆运海关") or heading.startswith("hải quan đường bộ trung quốc")
+
+    def is_customs_trend(value: str) -> bool:
+        heading = heading_text(value).lower()
+        return (heading.startswith(("中国陆运近期趋势", "中国陆运近"))
+                or heading.startswith("xu hướng hải quan đường bộ trung quốc"))
+
     for path in raw_root.glob("*/*/*/*/*/article.md"):
         try:
             content = path.read_text(encoding="utf-8")
@@ -103,7 +110,7 @@ def daily_vehicle_counts(raw_root: Path) -> list[dict]:
         except (TypeError, ValueError):
             article_year = 0
         for start, line in enumerate(lines):
-            if not section_header.match(heading_text(line)):
+            if not is_customs_section(line):
                 continue
             window = lines[start + 1 : start + 35]
             date = next((match.group() for row in window[:8] if (match := date_pattern.search(row))), None)
@@ -140,7 +147,7 @@ def daily_vehicle_counts(raw_root: Path) -> list[dict]:
         # of assigning counts by fixed column positions.
         if article_year:
             for start, line in enumerate(lines):
-                if not trend_header.match(heading_text(line)):
+                if not is_customs_trend(line):
                     continue
                 header_index = next((index for index in range(start + 1, min(start + 8, len(lines)))
                                      if lines[index].lstrip().startswith("|")
