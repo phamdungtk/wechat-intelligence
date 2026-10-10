@@ -464,7 +464,16 @@ def _open_account_archive(progress=None) -> None:
     if article_tab:
         click(article_tab["x"] + max(5, article_tab["width"] // 2), article_tab["y"] + 7)
         time.sleep(1)
-    _position_browser()
+    if _position_browser():
+        # Archive scrolling persists between syncs. A previous daily scan can
+        # leave the WeChat view at the bottom, causing later hourly scans to
+        # inspect only the last few old cards and incorrectly report success.
+        # Focus the archive content and return to the newest article before
+        # every scan.
+        docker_exec("xdotool", "mousemove", "850", "590", "key", "Home")
+        time.sleep(0.5)
+        if progress:
+            progress("Đã đưa kho bài về đầu danh sách để quét bài mới nhất.")
 
 
 def _archive_card_groups(image) -> list[dict]:
